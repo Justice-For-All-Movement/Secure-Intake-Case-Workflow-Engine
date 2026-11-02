@@ -37,3 +37,7 @@ Twelve focused cryptographic-envelope regressions cover randomized-IV round trip
 The webhook secret decoder had the same permissive segment/Base64 behavior. It now requires four canonical v1 components with exact IV/tag lengths and bounds ciphertext before allocation. Authenticated plaintext must remain within the existing 32–256 character secret contract; the conservative 1024-byte decode bound preserves UTF-8 secrets. Errors are categorical. Separate webhook and protected-payload keys, existing ciphertext format, signature construction and authorization remain unchanged.
 
 The combined source suite now passes 45 tests across six files, including eight webhook crypto tests covering existing HMAC behavior, randomized-IV round trips (ASCII and Unicode), alternate encodings, extra segments and tampering. Local TypeScript checking passes. Full CI, upstream scoped assessment, deployment and all six required security gates still require exact-source verification.
+
+## Component/data-flow discovery continuation
+
+[The source-bound discovery matrix](SI-38_COMPONENT_FLOW_DISCOVERY.md) identifies sixteen inspected boundaries and records unresolved engineering findings. It explicitly distinguishes this work branch from unmerged SI-35/36/37 changes, server processing from content E2EE, service credentials from person-scoped delegation, and local tests from live assurance. Canonical coverage, implementation/testing completion and independent review remain pending.
