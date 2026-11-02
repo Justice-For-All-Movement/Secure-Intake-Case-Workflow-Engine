@@ -139,10 +139,6 @@ export async function scanDocumentVersionJob(input: {
         provider: scanner.provider,
         details: {
           reason: "scanner_error",
-          message:
-            error instanceof Error
-              ? error.message.slice(0, 500)
-              : "Unknown scanner error",
         },
         actorUserId: null,
       },

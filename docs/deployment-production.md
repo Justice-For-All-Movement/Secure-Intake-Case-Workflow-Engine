@@ -32,3 +32,8 @@ Do **not** call the deployment production-ready unless all are verified: deploye
 ## Cost and dependency boundary
 
 The Blueprint intentionally leaves the database in Neon and does not purchase Render databases. The free web preview does not promise continuous uptime. The optional worker requires a paid Render service (check current rates before approving it). A cheaper scheduled worker may trade latency and availability against cost but must preserve the quarantine and deadline guarantees of the specific deployment.
+
+## Transport configuration hardening
+
+The malware scanner URL must not contain a query string or fragment; provide its token through the provider-managed `MALWARE_SCANNER_TOKEN` secret. S3 and scanner redirects fail closed. For slow S3 providers, set `DOCUMENT_S3_TIMEOUT_MS` within 1000 to 300000 ms after measuring the largest supported upload; the default is 120000 ms. A timeout fails the operation and does not promote quarantined content.
+Scanner requests also enforce a 1000 to 300000 ms timeout through `MALWARE_SCANNER_TIMEOUT_MS` (default 120000 ms).

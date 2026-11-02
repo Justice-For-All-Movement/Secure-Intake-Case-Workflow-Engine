@@ -35,14 +35,15 @@ class HttpMalwareScanner implements MalwareScanner {
     const timeoutMs = Number(
       process.env.MALWARE_SCANNER_TIMEOUT_MS ?? "120000",
     );
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300000) {
       throw new Error(
-        "MALWARE_SCANNER_TIMEOUT_MS must be an integer >= 1000.",
+        "MALWARE_SCANNER_TIMEOUT_MS must be between 1000 and 300000.",
       );
     }
 
     const response = await fetch(this.endpoint, {
       method: "POST",
+      redirect: "manual",
       headers: {
         "content-type":
           input.mimeType || "application/octet-stream",
@@ -62,10 +63,26 @@ class HttpMalwareScanner implements MalwareScanner {
       );
     }
 
-    const body = (await response.json()) as {
-      status?: unknown;
-      details?: unknown;
-    };
+    if (!response.body) throw new Error("Malware scanner returned an empty body.");
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let length = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > 64 * 1024) {
+        await reader.cancel();
+        throw new Error("Malware scanner response exceeds 64 KiB.");
+      }
+      chunks.push(Buffer.from(value));
+    }
+    let body: { status?: unknown; details?: unknown };
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as typeof body;
+    } catch {
+      throw new Error("Malware scanner returned invalid JSON.");
+    }
     if (
       body.status !== "clean" &&
       body.status !== "infected" &&
@@ -96,7 +113,9 @@ export function getMalwareScanner(): MalwareScanner | null {
   if (
     endpoint.protocol !== "https:" ||
     endpoint.username ||
-    endpoint.password
+    endpoint.password ||
+    endpoint.search ||
+    endpoint.hash
   ) {
     throw new Error(
       "MALWARE_SCANNER_URL must be an HTTPS URL without embedded credentials.",
