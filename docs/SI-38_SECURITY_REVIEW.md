@@ -23,3 +23,11 @@ The fix checks `Object.prototype.hasOwnProperty.call` before these reads. The re
 - Test tenant and role boundaries, key custody and rotation, backup restoration, endpoint egress controls, and real provider behavior against exact source and deployment identities.
 - Keep implementation, automated testing and independent review statuses separate. Server-held AES-GCM and TLS do not establish end-to-end encryption of content from the submitter to recipients.
 - Leave conformance and certification claims pending until the applicable standard's evidence and review requirements are met.
+
+## Finding SI38-02: protected-payload envelope ambiguity
+
+The v1 decoder previously destructured the first four dot-separated segments and used Node's permissive Base64 decoder. A valid ciphertext plus an extra segment or noncanonical/ignored Base64 characters could still decrypt. This does not establish an AES-GCM break, but permits multiple text representations of the same authenticated ciphertext and bypasses strict envelope validation. Oversized decoder input was also unbounded.
+
+The decoder now accepts exactly four components, the existing v1 version, canonical unpadded Base64url, a 12-byte IV, a 16-byte tag, and at most 256 KiB ciphertext/plaintext. Length is checked before decoding allocation. Existing canonical ciphertext format and AAD context bytes remain unchanged. Decryption/authentication/UTF-8/JSON errors are categorical and never include decoded plaintext or provider diagnostics. This adds no key rotation, reveal permission, new encryption profile or E2EE claim.
+
+Twelve focused cryptographic-envelope regressions cover randomized-IV round trip, organization/submission/compartment context substitution, appended segments, noncanonical trailing bits, IV/tag/ciphertext tampering, malformed components, exact size boundaries and sanitized malformed-plaintext errors. Seven cases failed against the prior implementation; all twelve pass after correction. The combined form/answer/envelope suite passes 37 tests under Node 22 and Vitest 3.2.7. This is scoped automated testing, not all six E2EESA gates, an independent review, deployed-provider evidence or certification. Full inventory and assessment remain pending.

@@ -11,6 +11,17 @@ export interface ProtectedPayloadContext {
   compartmentKey: string;
 }
 
+const maxPlaintextBytes = 256 * 1024;
+const maxEnvelopeCharacters = 5 + 16 + 22 + Math.ceil(maxPlaintextBytes * 4 / 3);
+const invalidPayload = () => new Error("Protected payload is invalid.");
+
+function decodeCanonicalComponent(value: string): Buffer {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw invalidPayload();
+  const bytes = Buffer.from(value, "base64url");
+  if (bytes.toString("base64url") !== value) throw invalidPayload();
+  return bytes;
+}
+
 function encryptionKey() {
   if (!env.PROTECTED_DATA_ENCRYPTION_KEY) {
     throw new Error(
@@ -32,7 +43,7 @@ export function encryptProtectedPayload(
   context: ProtectedPayloadContext,
 ) {
   const plaintext = JSON.stringify(payload);
-  if (Buffer.byteLength(plaintext, "utf8") > 256 * 1024) {
+  if (Buffer.byteLength(plaintext, "utf8") > maxPlaintextBytes) {
     throw new Error("Protected payload exceeds the 256 KiB limit.");
   }
 
@@ -57,31 +68,46 @@ export function decryptProtectedPayload(
   value: string,
   context: ProtectedPayloadContext,
 ): Record<string, unknown> {
-  const [version, ivValue, tagValue, ciphertextValue] = value.split(".");
+  if (typeof value !== "string" || value.length > maxEnvelopeCharacters) throw invalidPayload();
+  const components = value.split(".");
+  const [version, ivValue, tagValue, ciphertextValue] = components;
   if (
+    components.length !== 4 ||
     version !== "v1" ||
     !ivValue ||
     !tagValue ||
     !ciphertextValue
   ) {
-    throw new Error("Protected payload is invalid.");
+    throw invalidPayload();
   }
 
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    encryptionKey(),
-    Buffer.from(ivValue, "base64url"),
-  );
-  decipher.setAAD(authenticatedContext(context));
-  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  const iv = decodeCanonicalComponent(ivValue);
+  const tag = decodeCanonicalComponent(tagValue);
+  const ciphertext = decodeCanonicalComponent(ciphertextValue);
+  if (iv.length !== 12 || tag.length !== 16 || ciphertext.length > maxPlaintextBytes) throw invalidPayload();
+  const key = encryptionKey();
 
-  const decoded = Buffer.concat([
-    decipher.update(Buffer.from(ciphertextValue, "base64url")),
-    decipher.final(),
-  ]).toString("utf8");
-  const payload: unknown = JSON.parse(decoded);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("Protected payload must decode to an object.");
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      key,
+      iv,
+    );
+    decipher.setAAD(authenticatedContext(context));
+    decipher.setAuthTag(tag);
+
+    const decoded = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(decoded);
+    const payload: unknown = JSON.parse(text);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw invalidPayload();
+    }
+    return payload as Record<string, unknown>;
+  } catch {
+    // Do not expose authenticated plaintext fragments or cryptographic diagnostics.
+    throw invalidPayload();
   }
-  return payload as Record<string, unknown>;
 }
