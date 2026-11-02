@@ -1,0 +1,19 @@
+# Keep source-control metadata, local credentials and runtime data out of release layers.
+.git
+**/.git
+**/node_modules
+**/.next
+**/coverage
+**/dist
+**/.data
+**/.env
+**/.env.*
+**/*.log
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.sqlite
+**/*.dump
+**/*.backup
+package-lock.json

@@ -1,7 +1,8 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json.gz.b64 ./
+COPY scripts/restore-lockfile.mjs scripts/restore-lockfile.mjs
+RUN node scripts/restore-lockfile.mjs && npm ci --no-audit --no-fund
 
 FROM node:22-alpine AS builder
 WORKDIR /app
