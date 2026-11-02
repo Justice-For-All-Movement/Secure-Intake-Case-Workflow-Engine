@@ -12,15 +12,17 @@ export function splitProtectedAnswers(
   answers: AnswerMap,
 ): SplitProtectedAnswers {
   const protectionByField = new Map(
-    fieldsInDefinition(definition)
-      .filter((field) => field.protection)
-      .map((field) => [field.id, field.protection!.compartment] as const),
+    fieldsInDefinition(definition).map((field) => [
+      field.id,
+      field.protection?.compartment ?? null,
+    ] as const),
   );
 
   const ordinaryAnswers: AnswerMap = {};
   const compartments = new Map<string, AnswerMap>();
 
   for (const [fieldId, value] of Object.entries(answers)) {
+    if (!protectionByField.has(fieldId)) continue;
     const compartment = protectionByField.get(fieldId);
     if (!compartment) {
       ordinaryAnswers[fieldId] = value;

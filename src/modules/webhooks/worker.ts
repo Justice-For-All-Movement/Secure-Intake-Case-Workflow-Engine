@@ -154,11 +154,12 @@ export const deliverWebhookJob: BackgroundJobHandler = async ({
         updatedAt: new Date(),
       })
       .where(eq(webhookDeliveries.id, row.delivery.id));
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message.slice(0, 2000)
-        : "Unknown webhook delivery failure.";
+  } catch {
+    // Provider/database exceptions may contain private URLs, headers or payloads.
+    // Persist and propagate only categorical diagnostics to the generic job ledger.
+    const message = responseStatus === null
+      ? "Webhook delivery failed."
+      : `Webhook delivery failed with HTTP ${responseStatus}.`;
 
     await db
       .update(webhookDeliveries)
@@ -170,6 +171,6 @@ export const deliverWebhookJob: BackgroundJobHandler = async ({
       })
       .where(eq(webhookDeliveries.id, row.delivery.id));
 
-    throw error;
+    throw new Error(message);
   }
 };

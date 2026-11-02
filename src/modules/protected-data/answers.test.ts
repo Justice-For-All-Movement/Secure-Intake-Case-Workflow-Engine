@@ -47,6 +47,7 @@ describe("splitProtectedAnswers", () => {
       ordinary: "visible",
       protected_name: "Secret Person",
       protected_email: "secret@example.invalid",
+      unexpected_private_value: "must not leak",
     });
 
     expect(result.ordinaryAnswers).toEqual({ ordinary: "visible" });
