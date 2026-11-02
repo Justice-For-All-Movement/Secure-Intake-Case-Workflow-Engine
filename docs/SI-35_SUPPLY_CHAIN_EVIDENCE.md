@@ -9,3 +9,11 @@ The release workflow enables BuildKit provenance and SBOM output and records the
 ## Lock restoration regression checks
 
 Run `node --test scripts/test-dependency-lock.mjs`. Five isolated subprocess tests verify the exact restored digest and repeatability, reject invalid encoding, altered/truncated archives and missing input, and preserve an existing output lock on each failure. These checks use only synthetic temporary directories and the committed dependency archive; they do not access credentials or the network. The ordinary Vitest suite invokes this regression script. Passing them does not establish reproducible images or release attestation verification.
+
+## Dependency and license metadata inventory
+
+After lock restoration, run `node scripts/dependency-inventory.mjs > /tmp/intake-dependency-inventory.json`. This deterministic version-1 metadata report binds every installed location, package version, registry tarball, SHA-512 integrity value, declared license and development/optional flags to the SHA-256 of the exact lock bytes. Nested installations remain separate. Missing license metadata is explicitly null and counted; it is never treated as permission. The committed lock contains 584 dependency entries, all with declared license metadata.
+
+Fourteen isolated inventory tests cover source binding, ordering, nested packages, missing license metadata and rejection of non-registry URLs, credentials, query parameters, malformed integrity, symlinks, invalid flags, traversal locations, oversized/malformed inputs and unsupported lock formats. The ordinary Vitest suite invokes these tests alongside restoration checks.
+
+This is a dependency review input, not an SPDX/CycloneDX SBOM, registry signature verification, license-text audit, permission grant or reproducible image attestation. The report is never used to authorize a release. Actual image contents, base-image digests, build provenance/SBOM and license obligations remain separately unverified. No image publication or new release was initiated.
