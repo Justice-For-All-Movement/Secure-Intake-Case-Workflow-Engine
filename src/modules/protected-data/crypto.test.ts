@@ -7,6 +7,17 @@ const context = { organizationId: "test-org", submissionId: "test-submission", c
 const secret = { name: "Synthetic Person", email: "synthetic@example.invalid" };
 
 describe("protected payload envelope", () => {
+  it("rejects a canonical one-bit mutation at every IV, tag and ciphertext byte", () => {
+    const original = encryptProtectedPayload(secret, context).split(".");
+    for (const segment of [1, 2, 3]) {
+      const bytes = Buffer.from(original[segment], "base64url");
+      for (let offset = 0; offset < bytes.length; offset += 1) {
+        const mutated = Buffer.from(bytes); mutated[offset] ^= 1;
+        const envelope = [...original]; envelope[segment] = mutated.toString("base64url");
+        expect(() => decryptProtectedPayload(envelope.join("."), context)).toThrow("Protected payload is invalid.");
+      }
+    }
+  });
   it("round trips existing v1 format and randomizes the IV", () => {
     const first = encryptProtectedPayload(secret, context), second = encryptProtectedPayload(secret, context);
     expect(first.split(".")).toHaveLength(4);
