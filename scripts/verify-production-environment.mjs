@@ -1,20 +1,29 @@
+import { isIP } from "node:net";
+
 /** Pure fail-closed checks for a Neon + Render deployment. Never log secret values. */
+function publicDnsHost(hostname) {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return host.includes(".") && host !== "localhost" &&
+    !host.endsWith(".localhost") && !host.endsWith(".local") &&
+    isIP(host.replace(/^\[|\]$/g, "")) === 0;
+}
 function httpsEndpoint(value, originOnly = false) {
   if (typeof value !== "string") return false;
   try {
     const u = new URL(value);
-    return u.protocol === "https:" && !!u.hostname && !u.username && !u.password &&
-      !u.port && (!originOnly || u.pathname === "/") && !u.search && !u.hash &&
-      u.hostname !== "localhost" && !u.hostname.endsWith(".localhost");
+    return u.protocol === "https:" && publicDnsHost(u.hostname) && !u.username && !u.password &&
+      !u.port && (!originOnly || u.pathname === "/") && !u.search && !u.hash;
   } catch { return false; }
 }
-function databaseUrl(value) {
+export function databaseUrl(value) {
   if (typeof value !== "string") return false;
   try {
     const u = new URL(value);
-    return ["postgres:", "postgresql:"].includes(u.protocol) && !!u.hostname &&
-      !!u.username && !!u.password &&
-      ["require", "verify-ca", "verify-full"].includes(u.searchParams.get("sslmode"));
+    const sslModes = u.searchParams.getAll("sslmode");
+    return ["postgres:", "postgresql:"].includes(u.protocol) &&
+      publicDnsHost(u.hostname) && u.pathname.length > 1 &&
+      !!u.username && !!u.password && sslModes.length === 1 &&
+      ["require", "verify-ca", "verify-full"].includes(sslModes[0]);
   } catch { return false; }
 }
 function safeSecret(value) {
