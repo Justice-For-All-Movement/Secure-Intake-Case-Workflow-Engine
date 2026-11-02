@@ -121,6 +121,7 @@ export class S3CompatibleStorageAdapter
 
     const canonicalHeaders = [
       `host:${requestUrl.host}`,
+      ...(method === "PUT" ? ["if-none-match:*"] : []),
       `x-amz-content-sha256:${payloadHash}`,
       `x-amz-date:${amzDate}`,
       ...(this.config.sessionToken
@@ -132,6 +133,7 @@ export class S3CompatibleStorageAdapter
 
     const signedHeaders = [
       "host",
+      ...(method === "PUT" ? ["if-none-match"] : []),
       "x-amz-content-sha256",
       "x-amz-date",
       ...(this.config.sessionToken
@@ -172,6 +174,9 @@ export class S3CompatibleStorageAdapter
       .digest("hex");
 
     const headers: Record<string, string> = {
+      // Preserve document-version bytes on retries and key collisions.
+      // This condition is signed; a 409/412 must never trigger an unconditional retry.
+      ...(method === "PUT" ? { "if-none-match": "*" } : {}),
       "x-amz-content-sha256": payloadHash,
       "x-amz-date": amzDate,
       authorization:
