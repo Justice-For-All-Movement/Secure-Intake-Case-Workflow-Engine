@@ -38,6 +38,8 @@ The webhook secret decoder had the same permissive segment/Base64 behavior. It n
 
 The combined source suite now passes 45 tests across six files, including eight webhook crypto tests covering existing HMAC behavior, randomized-IV round trips (ASCII and Unicode), alternate encodings, extra segments and tampering. Local TypeScript checking passes. Full CI, upstream scoped assessment, deployment and all six required security gates still require exact-source verification.
 
-## Component/data-flow discovery continuation
+## Finding SI38-04: webhook failure diagnostic propagation
 
-[The source-bound discovery matrix](SI-38_COMPONENT_FLOW_DISCOVERY.md) identifies sixteen inspected boundaries and records unresolved engineering findings. It explicitly distinguishes this work branch from unmerged SI-35/36/37 changes, server processing from content E2EE, service credentials from person-scoped delegation, and local tests from live assurance. Canonical coverage, implementation/testing completion and independent review remain pending.
+The webhook worker persisted arbitrary exception messages to its delivery record and rethrew them to the generic job ledger. It now records and throws only a categorical failure, optionally including the numeric HTTP status. Four isolated worker scenarios exercise pending/final attempts with both thrown transport errors and HTTP 503; private fixture diagnostics never reach persisted state or the propagated error. Retry/final status and authorization checks are preserved. The 45 form/answer/crypto cases plus these four worker cases pass locally; full current-head CI remains separate.
+
+[Source-bound flow discovery](SI-38_COMPONENT_FLOW_DISCOVERY.md) remains partial. In particular, DNS address binding and remaining provider/platform integration are unfinished engineering work; no production egress guarantee or E2EESA completion is asserted.
