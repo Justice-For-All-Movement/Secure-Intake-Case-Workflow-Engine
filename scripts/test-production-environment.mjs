@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { inspectProductionEnvironment } from "./verify-production-environment.mjs";
 import { verifyDeploymentImage } from "./verify-deployment-image.mjs";
 import { inspectMigrationTarget } from "./preflight-migrations.mjs";
@@ -93,3 +98,52 @@ assert(inspectMigrationTarget({ ...migrationTarget, MIGRATION_EXPECTED_HOST: "" 
   .failed.includes("expected_host"));
 assert(inspectMigrationTarget({ ...migrationTarget, DATABASE_URL: "postgresql://user:secret@ep-secure.example.net/%ZZ?sslmode=require" })
   .failed.includes("expected_database"));
+
+// Bind the exact supported release schema, not JavaScript string coercion.
+for (const invalidEvidence of [null, [], {},
+  { ...evidence, engine: { sourceCommit: sourceSha, tag: "vundefined" } },
+  { ...evidence, engine: { ...evidence.engine, version: null, tag: "vnull" } },
+  { ...evidence, engine: { ...evidence.engine, version: [], tag: "v" } },
+  { ...evidence, engine: { ...evidence.engine, version: "1.0.0-rc.9\n", tag: "v1.0.0-rc.9\n" } },
+  { ...evidence, engine: { ...evidence.engine, version: "2.0.0", tag: "v2.0.0" } },
+  { ...evidence, container: { ...evidence.container, digest: [digest] } },
+  { ...evidence, unsupportedAuthority: true },
+]) assert.equal(verifyDeploymentImage(invalidEvidence, sourceSha, blueprint).ok, false);
+for (const invalidSource of [undefined, null, [sourceSha], "0".repeat(40), "main", sourceSha + "\n"])
+  assert.equal(verifyDeploymentImage(evidence, invalidSource, blueprint).ok, false);
+for (const invalidBlueprint of [null, {}, Buffer.from(blueprint), "x".repeat(1024 * 1024 + 1)])
+  assert.equal(verifyDeploymentImage(evidence, sourceSha, invalidBlueprint).ok, false);
+
+const temporary = mkdtempSync(join(tmpdir(), "intake-image-preflight-"));
+try {
+  const evidenceFile = join(temporary, "evidence.json"), blueprintFile = join(temporary, "render.yaml");
+  writeFileSync(evidenceFile, JSON.stringify(evidence));
+  writeFileSync(blueprintFile, blueprint);
+  const command = fileURLToPath(new URL("./verify-deployment-image.mjs", import.meta.url));
+  const normalArgs = ["--evidence", evidenceFile, "--source", sourceSha, "--blueprint", blueprintFile];
+  const cli = args => spawnSync(process.execPath, [command, ...args], {
+    encoding: "utf8", timeout: 5000, env: { PATH: process.env.PATH ?? "" },
+  });
+  const passing = cli(normalArgs);
+  assert.equal(passing.status, 0, passing.stderr);
+  assert.deepEqual(JSON.parse(passing.stdout), { ok: true, failed: [] });
+  const mismatch = cli(normalArgs.map(value => value === sourceSha ? "c".repeat(40) : value));
+  assert.equal(mismatch.status, 1);
+  assert(JSON.parse(mismatch.stdout).failed.includes("source_commit"));
+  for (const args of [[], normalArgs.slice(0, -1),
+    ["--evidence", evidenceFile, "--evidence", evidenceFile, "--blueprint", blueprintFile],
+    ["--source", "--evidence", evidenceFile, sourceSha, "--blueprint", blueprintFile]]) {
+    assert.equal(cli(args).status, 2);
+  }
+  const marker = "synthetic-private-input-must-not-be-logged";
+  for (const input of [`{${marker}`, "x".repeat(65537)]) {
+    writeFileSync(evidenceFile, input);
+    const invalid = cli(normalArgs);
+    assert.equal(invalid.status, 2);
+    assert(!invalid.stdout.includes(marker) && !invalid.stderr.includes(marker));
+    assert(!invalid.stderr.includes(temporary));
+  }
+  rmSync(evidenceFile);
+  assert.equal(cli(normalArgs).status, 2);
+} finally { rmSync(temporary, { recursive: true, force: true }); }
+console.info("Release evidence shape, source and fail-closed CLI regression checks passed.");
