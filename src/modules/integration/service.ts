@@ -7,6 +7,8 @@ import {
   caseDeadlineHistory,
   caseDeadlines,
   caseQueues,
+  caseTeamMemberships,
+  caseTeams,
   cases,
   documentSubmissionLinks,
   externalParticipantCredentials,
@@ -29,9 +31,9 @@ import {
   ensureDefaultRoles,
 } from "@/modules/auth/default-roles";
 import { findCaseById, listCaseTags } from "@/modules/cases/repository";
+import { isCasePriority } from "@/modules/cases/lifecycle";
 import {
   createCaseFromSubmission,
-  parseCasePriority,
   transitionCase,
   updateCaseMetadata,
 } from "@/modules/cases/service";
@@ -56,7 +58,9 @@ import { submitPublicForm } from "@/modules/forms/service";
 import { getCaseParticipantMessagingCapability } from "@/modules/participant-portal/service";
 import { decryptProtectedPayload } from "@/modules/protected-data/crypto";
 import {
+  addTeamMember,
   applyRoutingRules,
+  CaseAssignmentError,
   manualAssignCase,
   RoutingTargetUnavailableError,
 } from "@/modules/routing/service";
@@ -77,6 +81,13 @@ import {
 } from "./api";
 
 type Ctx = ApiAuthorizationContext;
+
+function requirePriority(value: string) {
+  if (!isCasePriority(value)) {
+    throw invalid("priority must be low, normal, high or critical.");
+  }
+  return value;
+}
 
 function documentView(row: {
   version: {
@@ -513,7 +524,7 @@ export async function openCase(
       actorUserId,
       title: optionalString(body.title, "title", 500) ?? undefined,
       priority: body.priority
-        ? parseCasePriority(String(body.priority))
+        ? requirePriority(String(body.priority))
         : undefined,
     }));
 
@@ -599,7 +610,7 @@ export async function triageCase(
       body.summary === undefined
         ? record.summary
         : optionalString(body.summary, "summary", 20000),
-    priority: parseCasePriority(String(body.priority ?? record.priority)),
+    priority: requirePriority(String(body.priority ?? record.priority)),
     disposition:
       body.disposition === undefined
         ? record.disposition
@@ -674,7 +685,8 @@ export async function assignCase(
     throw new ApiProblem(
       409,
       "assignment_failed",
-      error instanceof Error && error.name === "CaseAssignmentError"
+      error instanceof CaseAssignmentError ||
+      error instanceof RoutingTargetUnavailableError
         ? error.message
         : "Case could not be assigned.",
     );
@@ -962,6 +974,27 @@ export async function upsertStaffIdentity(
     }
   }
 
+  const teamSlugs = Array.isArray(body.teamSlugs)
+    ? body.teamSlugs.map(String)
+    : [];
+  const teams = teamSlugs.length
+    ? await db
+        .select({ id: caseTeams.id, slug: caseTeams.slug })
+        .from(caseTeams)
+        .where(
+          and(
+            eq(caseTeams.organizationId, ctx.organizationId),
+            inArray(caseTeams.slug, teamSlugs),
+          ),
+        )
+    : [];
+  const unknownTeams = teamSlugs.filter(
+    (slug) => !teams.some((team) => team.slug === slug),
+  );
+  if (unknownTeams.length) {
+    throw invalid(`Unknown team: ${unknownTeams.join(", ")}`);
+  }
+
   const result = await db.transaction(async (tx) => {
     const [identity] = await tx
       .select()
@@ -1039,8 +1072,32 @@ export async function upsertStaffIdentity(
       membershipId: membership.id,
       membershipStatus: membership.status,
       roleKeys,
+      teamSlugs,
     };
   });
+
+  for (const team of teams) {
+    const [existing] = await db
+      .select({ id: caseTeamMemberships.id })
+      .from(caseTeamMemberships)
+      .where(
+        and(
+          eq(caseTeamMemberships.teamId, team.id),
+          eq(
+            caseTeamMemberships.organizationMembershipId,
+            result.membershipId,
+          ),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      await addTeamMember(db, ctx.tenantScope, {
+        teamId: team.id,
+        membershipId: result.membershipId,
+        actorUserId: await ensureServiceActor(db, ctx),
+      });
+    }
+  }
 
   if (roleKeys.length) {
     for (const roleKey of roleKeys) {

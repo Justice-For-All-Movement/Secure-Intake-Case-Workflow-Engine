@@ -332,7 +332,7 @@ event.
 
 ```json
 {"data":{"document":{"versionId":"5f0c...","sha256":"3b7e...","released":true,"...":"as in the attachment list"},
- "custody":[{"id":"...","action":"public_upload","fromCustodian":"public-submitter","toCustodian":"engine","location":null,"note":null,"occurredAt":"2026-11-10T05:49:58.000Z"}]}}
+ "custody":[{"id":"...","action":"public_upload_quarantined","fromCustodian":null,"toCustodian":"system","location":null,"note":null,"occurredAt":"2026-11-10T05:49:58.000Z"}]}}
 ```
 
 `GET {B}/cases/{caseId}/documents` [`case:view`, `document:view`] — case evidence
@@ -355,7 +355,7 @@ with `created: false` and status `200`.
   "availableTransitions":[{"key":"advance_a_to_b","label":"Advance A to B","to":"state_b"}]}}}
 ```
 
-`priority`: `low | normal | high | urgent`. `routing`: `applied` (routing rules
+`priority`: `low | normal | high | critical` (anything else is `422 invalid_request`). `routing`: `applied` (routing rules
 ran), `skipped` (`route: false` or the case already existed), `unavailable`
 (a rule matched but its queue has no available member; the case stays
 unassigned), `failed`.
@@ -619,16 +619,19 @@ What the intake deployment must provide for that:
 provider subject to a staff member of this tenant (idempotent).
 
 ```json
-{"provider":"pam","subject":"user-1","displayName":"Case Worker","email":null,"roleKeys":["case_worker"]}
+{"provider":"pam","subject":"user-1","displayName":"Case Worker","email":null,"roleKeys":["case_worker"],"teamSlugs":["example_team"]}
 // 200
-{"data":{"provider":"pam","subject":"user-1","userId":"793a40f5-...","membershipId":"1d29fa6b-...","membershipStatus":"active","roleKeys":["case_worker"]}}
+{"data":{"provider":"pam","subject":"user-1","userId":"793a40f5-...","membershipId":"1d29fa6b-...","membershipStatus":"active","roleKeys":["case_worker"],"teamSlugs":["example_team"]}}
 ```
 
 `provider`: lowercase identifier (`^[a-z0-9][a-z0-9_.:-]{0,99}$`); `subject`:
 1–255 chars. `roleKeys` are this tenant's role keys (`supervisor`,
 `case_worker`, `intake_reviewer`, `reviewer`, `auditor`, or manifest-defined);
 `administrator` cannot be granted through the API (`403 role_not_delegable`).
-The created user has no password and cannot sign in locally. An `email`
+`teamSlugs` adds the member to existing teams: a case can be assigned to a
+person inside a queue only when that person belongs to the queue's team
+(otherwise `409 assignment_failed`). Roles and teams are only ever added by
+this call. The created user has no password and cannot sign in locally. An `email`
 already used by another account is `409 email_in_use` (an external subject is
 never bound to a pre-existing local account). Use `userId` with
 `/cases/{id}/assignment`.
@@ -658,7 +661,7 @@ tracking code and access secret.
 
 1. A file uploaded with the public form is stored once (SHA-256 recorded),
    linked to the submission, with `contentStatus=quarantined`,
-   `malwareScanStatus=pending`, a `public_upload` custody event and a
+   `malwareScanStatus=pending`, a `public_upload_quarantined` custody event and a
    `document.scan` background job (same transaction as the submission).
 2. The **worker** claims the job, re-reads the bytes, verifies the SHA-256 and
    calls the configured scanner.

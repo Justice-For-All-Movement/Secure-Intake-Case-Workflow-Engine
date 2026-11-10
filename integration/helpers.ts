@@ -146,8 +146,12 @@ export async function waitForEvent(
   );
 }
 
-/** Playwright is provided by the environment, not by this package. */
-export function loadPlaywright(): typeof import("playwright") | null {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Playwright is provided by the environment, not by this package, so it is
+ * loaded dynamically and typed loosely. Returns null when unavailable.
+ */
+export function loadPlaywright(): { chromium: { launch: () => Promise<any> } } | null {
   try {
     return createRequire(import.meta.url)("playwright");
   } catch {

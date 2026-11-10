@@ -173,7 +173,11 @@ export function FormRenderer({
         ) : null}
       </div>
 
-    <form action={formAction} encType="multipart/form-data">
+    <form
+      action={formAction}
+      encType="multipart/form-data"
+      data-testid="report-form"
+    >
       <input type="hidden" name="__locale" value={locale ?? ""} />
       <input type="hidden" name="__draft" value={draftCode} />
       {definition.intro ? <p>{definition.intro}</p> : null}
@@ -222,7 +226,12 @@ export function FormRenderer({
         </section>
       ))}
 
-      <button type="submit" disabled={pending} aria-disabled={pending}>
+      <button
+        type="submit"
+        data-testid="submit-report"
+        disabled={pending}
+        aria-disabled={pending}
+      >
         {pending ? ui.submitting : definition.submitLabel}
       </button>
       {resumable ? (
@@ -526,13 +535,14 @@ function FormFieldControl({
           aria-describedby={describedBy}
           tabIndex={-1}
         >
-          <legend>
+          <legend id={`legend-${field.id}`}>
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
           </legend>
           <input
             name={field.id}
             type="file"
+            aria-labelledby={`legend-${field.id}`}
             disabled={!publicUploadEnabled}
             required={required && publicUploadEnabled}
             multiple={(field.maxFiles ?? 1) > 1}
