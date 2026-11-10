@@ -1,3 +1,5 @@
+import { runApi } from "@/modules/integration/api";
+import { createSubmission } from "@/modules/integration/service";
 import { getRuntimeDatabase } from "@/db/runtime";
 import { listApiSubmissions } from "@/modules/api/repository";
 import {
@@ -37,4 +39,24 @@ export async function GET(request: Request) {
     auth.context,
     paginated(records, limit, offset),
   );
+}
+
+export async function POST(request: Request) {
+  const auth = await authorizeApiRequest(request, ["submission:create"]);
+  if (!auth.ok) return auth.response;
+  const context = auth.context;
+  return runApi(context, request, async (body) => {
+    const data = await createSubmission(getRuntimeDatabase(), context, body);
+    return {
+      status: 201,
+      data,
+      // The access secret is shown once and never persisted, so an
+      // idempotent replay returns the same submission without it.
+      replayData: {
+        ...data,
+        participantAccessSecret: null,
+        participantAccessSecretWithheld: Boolean(data.participantAccessSecret),
+      },
+    };
+  });
 }

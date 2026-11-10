@@ -9,6 +9,7 @@ import {
   decryptWebhookSecret,
   webhookSignature,
 } from "./crypto";
+import { integrationEventFromRow } from "@/modules/integration/events";
 import { assertWebhookDestinationPublic } from "./policy";
 
 function deliveryIdFromPayload(payload: Record<string, unknown>) {
@@ -101,22 +102,25 @@ export const deliverWebhookJob: BackgroundJobHandler = async ({
       row.subscription.signingSecretCiphertext,
     );
 
+    const event = integrationEventFromRow(row.event);
     const payload = {
+      // `id` is the delivery id (unique per subscription + event); `eventId`
+      // is stable across subscriptions and matches the event feed.
       id: row.delivery.id,
-      type: row.event.action,
-      occurredAt: row.event.occurredAt.toISOString(),
+      eventId: event.id,
+      type: event.type,
+      action: event.action,
+      cursor: event.cursor,
+      sequence: event.sequence,
+      occurredAt: event.occurredAt,
       organizationId: row.event.organizationId,
-      resource: {
-        type: row.event.resourceType,
-        id: row.event.resourceId,
-        parentType: row.event.parentResourceType,
-        parentId: row.event.parentResourceId,
-      },
-      correlationId: row.event.correlationId,
-      source: row.event.source,
-      previousState: row.event.previousState,
-      newState: row.event.newState,
-      metadata: row.event.metadata,
+      resource: event.resource,
+      actor: event.actor,
+      correlationId: event.correlationId,
+      source: event.source,
+      previousState: event.previousState,
+      newState: event.newState,
+      metadata: event.metadata,
     };
     const body = JSON.stringify(payload);
     const timestamp = String(Math.floor(Date.now() / 1000));
@@ -130,7 +134,8 @@ export const deliverWebhookJob: BackgroundJobHandler = async ({
         "Content-Type": "application/json",
         "User-Agent": "SICWE-Webhook/1.0",
         "X-SICWE-Delivery": row.delivery.id,
-        "X-SICWE-Event": row.event.action,
+        "X-SICWE-Event": event.type,
+        "X-SICWE-Event-Id": event.id,
         "X-SICWE-Timestamp": timestamp,
         "X-SICWE-Signature": `sha256=${signature}`,
       },

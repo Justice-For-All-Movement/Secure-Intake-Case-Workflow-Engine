@@ -74,7 +74,7 @@ describe("authenticated API capabilities", () => {
     expect(value.authentication.grantedScopes).toEqual(["case:create", "case:view", "document:view"]);
     expect(value.endpoints.find(endpoint => endpoint.id === "documents.list")?.available).toBe(true);
     expect(value.endpoints.find(endpoint => endpoint.id === "deadlines.list")?.available).toBe(false);
-    expect(value.endpoints.some(endpoint => (endpoint.id as string) === "cases.create")).toBe(false);
+    expect(value.endpoints.find(endpoint => endpoint.id === "cases.open")?.available).toBe(false);
     expect(value.endpoints.find(endpoint => endpoint.id === "referrals.create")?.available).toBe(false);
   });
 
@@ -84,8 +84,9 @@ describe("authenticated API capabilities", () => {
     for (const secret of [token, organizationId, "private-client", "tenantScope", "keyHash", "DATABASE_URL", "storageKey", "answers", "clientId", "clientName", "organizationId"]) expect(text).not.toContain(secret);
     const data = JSON.parse(text).data;
     expect(data.endpoints.every((endpoint: { available: boolean }) => endpoint.available)).toBe(true);
-    expect(data.limits.attachments).toMatchObject({ metadataOnly: true, binaryDownload: false, binaryUpload: false, protectedBinary: false });
-    expect(data.limits.requestIdempotency).toBe(false);
+    expect(data.limits.attachments).toMatchObject({ metadataOnly: false, binaryDownload: true, binaryUpload: false, protectedBinary: false });
+    expect(data.limits.requestIdempotency).toBe(true);
+    expect(text.length).toBeLessThan(60000); // downstream verifiers cap the capability document at 64 KiB
     expect(data.limits.requestIdHeader).toBe(false);
   });
 });
@@ -118,7 +119,8 @@ describe("source-bound API capability inventory", () => {
     expect(limits).toMatchObject({ cursor: false, stableSnapshot: false, nextOffsetMayExceedMax: true });
     for (const endpoint of apiEndpoints) {
       const source = readFileSync(path.resolve("src/app", endpoint.path.slice(1).replace(/\{([^}]+)\}/g, "[$1]"), "route.ts"), "utf8");
-      expect(source.includes("paginated(")).toBe(endpoint.pagination === "offset");
+      // A route file may serve several methods; offset pagination is a property of the file's list method.
+      expect(source.includes("paginated(")).toBe(apiEndpoints.some(other => other.path === endpoint.path && other.pagination === "offset"));
     }
   });
 });

@@ -696,24 +696,26 @@ export async function recordMalwareScanResult(
 
     if (!version) throw new DocumentNotFoundError();
 
-    if (input.status === "clean") {
-      const submissionLinks = await tx
-        .select({
-          submissionId: documentSubmissionLinks.submissionId,
-        })
-        .from(documentSubmissionLinks)
-        .where(
-          and(
-            eq(
-              documentSubmissionLinks.organizationId,
-              scope.organizationId,
-            ),
-            eq(
-              documentSubmissionLinks.documentVersionId,
-              version.id,
-            ),
+    const submissionLinks = await tx
+      .select({
+        submissionId: documentSubmissionLinks.submissionId,
+      })
+      .from(documentSubmissionLinks)
+      .where(
+        and(
+          eq(
+            documentSubmissionLinks.organizationId,
+            scope.organizationId,
           ),
-        );
+          eq(
+            documentSubmissionLinks.documentVersionId,
+            version.id,
+          ),
+        ),
+      );
+    const promotedCaseIds: string[] = [];
+
+    if (input.status === "clean") {
 
       for (const submissionLink of submissionLinks) {
         const [caseRecord] = await tx
@@ -743,6 +745,7 @@ export async function recordMalwareScanResult(
               attachedByUserId: input.actorUserId ?? null,
             })
             .onConflictDoNothing();
+          promotedCaseIds.push(caseRecord.id);
         }
       }
     }
@@ -766,12 +769,22 @@ export async function recordMalwareScanResult(
         action: "document.scan_recorded",
         resourceType: "document_version",
         resourceId: version.id,
+        parentResourceType: submissionLinks[0] ? "submission" : null,
+        parentResourceId: submissionLinks[0]?.submissionId ?? null,
         newState: {
           malwareScanStatus: version.malwareScanStatus,
           contentStatus: version.contentStatus,
         },
         metadata: {
           provider: version.malwareScanProvider,
+          documentId: version.documentId,
+          sha256: version.sha256,
+          sizeBytes: version.sizeBytes,
+          mimeType: version.mimeType,
+          submissionIds: submissionLinks.map(
+            (link) => link.submissionId,
+          ),
+          caseIds: promotedCaseIds,
         },
       }),
     );

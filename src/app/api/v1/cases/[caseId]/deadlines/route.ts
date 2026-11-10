@@ -1,3 +1,5 @@
+import { runApi } from "@/modules/integration/api";
+import { createManualDeadline } from "@/modules/integration/service";
 import { getRuntimeDatabase } from "@/db/runtime";
 import { findCaseById } from "@/modules/cases/repository";
 import { listCaseDeadlines } from "@/modules/deadlines/repository";
@@ -80,6 +82,26 @@ export async function POST(
   }
 
   const operation = String(body.operation ?? "");
+  if (operation === "create") {
+    const context = auth.context;
+    return runApi(
+      context,
+      new Request(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body: JSON.stringify(body),
+      }),
+      async (parsed) => ({
+        status: 201,
+        data: await createManualDeadline(
+          getRuntimeDatabase(),
+          context,
+          caseId,
+          parsed,
+        ),
+      }),
+    );
+  }
   const deadlineId = String(body.deadlineId ?? "");
   const reason = String(body.reason ?? "").trim();
   const extensionValue = Number(body.extensionValue);

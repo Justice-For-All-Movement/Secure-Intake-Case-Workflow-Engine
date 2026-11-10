@@ -44,7 +44,7 @@ export async function createWebhookSubscription(
     endpointUrl: string;
     eventTypes: readonly string[];
     signingSecret: string;
-    actorUserId: string;
+    actorUserId: string | null;
   },
 ) {
   const name = input.name.trim().slice(0, 120);
@@ -72,7 +72,7 @@ export async function createWebhookSubscription(
   await db.insert(auditEvents).values(
     auditEventValues({
       organizationId: scope.organizationId,
-      actorType: "user",
+      actorType: input.actorUserId ? "user" : "system",
       actorUserId: input.actorUserId,
       action: "webhook.subscription_created",
       resourceType: "webhook_subscription",

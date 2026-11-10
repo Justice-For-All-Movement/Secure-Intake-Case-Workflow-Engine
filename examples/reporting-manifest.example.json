@@ -1,0 +1,686 @@
+{
+  "schemaVersion": 1,
+  "application": {
+    "key": "example_application",
+    "name": "Example Application",
+    "shortName": "Example",
+    "description": "Domain-neutral fixture for validating the reusable thin-application contract.",
+    "branding": {
+      "accentColor": "#334155",
+      "homeTitle": "Example Intake",
+      "homeDescription": "Submit an example value to exercise the generic engine contract."
+    },
+    "terminology": {
+      "case": {
+        "singular": "Record",
+        "plural": "Records"
+      },
+      "submission": {
+        "singular": "Submission",
+        "plural": "Submissions"
+      },
+      "submitter": {
+        "singular": "Submitter",
+        "plural": "Submitters"
+      },
+      "review": {
+        "singular": "Review",
+        "plural": "Reviews"
+      },
+      "deadline": {
+        "singular": "Deadline",
+        "plural": "Deadlines"
+      },
+      "document": {
+        "singular": "Document",
+        "plural": "Documents"
+      },
+      "queue": {
+        "singular": "Queue",
+        "plural": "Queues"
+      }
+    }
+  },
+  "roles": [
+    {
+      "key": "example_operator",
+      "name": "Example Operator",
+      "description": "Neutral role used only to validate manifest-defined RBAC.",
+      "permissions": [
+        "case:view",
+        "case:update",
+        "case:close",
+        "deadline:view",
+        "deadline:operate",
+        "document:view",
+        "document:upload",
+        "review:view",
+        "review:file",
+        "protected_data:view_metadata",
+        "protected_data:request_reveal"
+      ]
+    }
+  ],
+  "documentTypes": [
+    {
+      "key": "example_document",
+      "name": "Example Document",
+      "acceptedMimeTypes": [
+        "application/pdf"
+      ],
+      "maxBytes": 10000000
+    },
+    {
+      "key": "supporting_material",
+      "name": "Supporting material",
+      "acceptedMimeTypes": [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "text/plain"
+      ],
+      "maxBytes": 10000000
+    }
+  ],
+  "deadlineCalendars": [
+    {
+      "key": "example_calendar",
+      "name": "Example Calendar",
+      "timeZone": "UTC",
+      "weekendDays": [
+        0,
+        6
+      ]
+    }
+  ],
+  "teams": [
+    {
+      "slug": "example_team",
+      "name": "Example Team"
+    }
+  ],
+  "queues": [
+    {
+      "slug": "example_queue",
+      "name": "Example Queue",
+      "teamSlug": "example_team",
+      "assignmentStrategy": "round_robin"
+    }
+  ],
+  "communicationTemplates": [
+    {
+      "key": "example_notice",
+      "name": "Example Notice",
+      "channel": "portal",
+      "subjectTemplate": "Record {{case_number}}",
+      "bodyTemplate": "Record {{case_number}} is currently {{case_status}}.",
+      "defaultVisibility": "participant"
+    }
+  ],
+  "workflows": [
+    {
+      "slug": "example_workflow",
+      "name": "Example Workflow",
+      "description": "Neutral workflow used only by integration-contract tests.",
+      "definition": {
+        "schemaVersion": 1,
+        "initialState": "state_a",
+        "states": [
+          {
+            "key": "state_a",
+            "label": "State A"
+          },
+          {
+            "key": "state_b",
+            "label": "State B"
+          },
+          {
+            "key": "state_c",
+            "label": "State C"
+          },
+          {
+            "key": "state_d",
+            "label": "State D"
+          },
+          {
+            "key": "state_closed",
+            "label": "State Closed"
+          }
+        ],
+        "transitions": [
+          {
+            "key": "advance_a_to_b",
+            "label": "Advance A to B",
+            "from": "state_a",
+            "to": "state_b",
+            "requiredPermissions": [
+              "case:update"
+            ],
+            "comment": "optional",
+            "actions": [
+              {
+                "type": "mark_open"
+              }
+            ]
+          },
+          {
+            "key": "advance_b_to_c",
+            "label": "Advance B to C",
+            "from": "state_b",
+            "to": "state_c",
+            "requiredPermissions": [
+              "case:update"
+            ],
+            "comment": "optional",
+            "actions": [
+              {
+                "type": "mark_resolved"
+              }
+            ]
+          },
+          {
+            "key": "close_d",
+            "label": "Close D",
+            "from": "state_d",
+            "to": "state_closed",
+            "requiredPermissions": [
+              "case:close"
+            ],
+            "comment": "optional",
+            "actions": [
+              {
+                "type": "mark_closed"
+              }
+            ]
+          }
+        ],
+        "deadlinePolicies": [
+          {
+            "key": "example_deadline",
+            "label": "Example Deadline",
+            "trigger": {
+              "type": "transition",
+              "transitionKey": "advance_a_to_b"
+            },
+            "duration": {
+              "value": 2,
+              "unit": "business_days"
+            },
+            "warningBefore": {
+              "value": 1,
+              "unit": "business_days"
+            },
+            "calendarKey": "example_calendar",
+            "completeOnTransitions": [
+              "advance_b_to_c"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "forms": [
+    {
+      "slug": "example_form",
+      "name": "Example Form",
+      "description": "Neutral public form used by the generic integration contract.",
+      "accessMode": "public",
+      "workflowSlug": "example_workflow",
+      "definition": {
+        "schemaVersion": 1,
+        "intro": "Provide an example value.",
+        "submitLabel": "Submit",
+        "confirmationMessage": "The example submission was received.",
+        "sections": [
+          {
+            "id": "example_section",
+            "title": "Example Section",
+            "fields": [
+              {
+                "id": "example_contact_mode",
+                "type": "select",
+                "label": "Example contact mode",
+                "required": true,
+                "options": [
+                  {
+                    "value": "status_only",
+                    "label": "Status only"
+                  },
+                  {
+                    "value": "messaging",
+                    "label": "Messaging"
+                  }
+                ]
+              },
+              {
+                "id": "example_value",
+                "type": "long_text",
+                "label": "Example value",
+                "required": true,
+                "validation": {
+                  "minLength": 5,
+                  "maxLength": 1000
+                }
+              },
+              {
+                "id": "example_secret",
+                "type": "short_text",
+                "label": "Example protected value",
+                "required": true,
+                "validation": {
+                  "minLength": 3,
+                  "maxLength": 200
+                },
+                "protection": {
+                  "compartment": "example_secret",
+                  "revealPolicy": "dual_control"
+                }
+              },
+              {
+                "id": "example_attachment",
+                "type": "file",
+                "label": "Example attachment",
+                "required": false,
+                "acceptedMimeTypes": [
+                  "application/pdf"
+                ],
+                "maxFiles": 2,
+                "publicUpload": {
+                  "documentTypeKey": "example_document",
+                  "visibility": "internal"
+                }
+              }
+            ]
+          }
+        ],
+        "participantPortal": {
+          "enabled": true,
+          "allowMessaging": true,
+          "messagingCondition": {
+            "fieldId": "example_contact_mode",
+            "operator": "equals",
+            "value": "messaging"
+          }
+        }
+      }
+    },
+    {
+      "slug": "report",
+      "name": "Make a report",
+      "description": "Tell us what happened. You choose how much to say about yourself.",
+      "accessMode": "public",
+      "workflowSlug": "example_workflow",
+      "definition": {
+        "schemaVersion": 1,
+        "defaultLocale": "en",
+        "resumableDrafts": true,
+        "intro": "Describe what happened in your own words. You can stay anonymous.",
+        "submitLabel": "Send report",
+        "confirmationMessage": "Thank you. Your report was received.",
+        "participantPortal": {
+          "enabled": true,
+          "allowMessaging": true,
+          "messagingCondition": {
+            "fieldId": "participation",
+            "operator": "not_equals",
+            "value": "anonymous"
+          }
+        },
+        "sections": [
+          {
+            "id": "about_you",
+            "title": "About you",
+            "description": "Nothing in this section is required beyond choosing how you want to take part.",
+            "fields": [
+              {
+                "id": "participation",
+                "type": "select",
+                "label": "How do you want to take part?",
+                "required": true,
+                "helpText": "Anonymous: we cannot write back. Pseudonym: we can write to you through a private follow-up page without knowing who you are. Named: you share contact details, which are stored encrypted.",
+                "options": [
+                  {
+                    "value": "anonymous",
+                    "label": "Anonymously"
+                  },
+                  {
+                    "value": "pseudonymous",
+                    "label": "With a pseudonym"
+                  },
+                  {
+                    "value": "named",
+                    "label": "With my name"
+                  }
+                ]
+              },
+              {
+                "id": "preferred_name",
+                "type": "short_text",
+                "label": "Name or pseudonym",
+                "required": false,
+                "condition": {
+                  "fieldId": "participation",
+                  "operator": "not_equals",
+                  "value": "anonymous"
+                },
+                "validation": {
+                  "maxLength": 200
+                },
+                "protection": {
+                  "compartment": "identity",
+                  "revealPolicy": "dual_control"
+                }
+              },
+              {
+                "id": "contact_email",
+                "type": "email",
+                "label": "Email address",
+                "required": false,
+                "condition": {
+                  "fieldId": "participation",
+                  "operator": "equals",
+                  "value": "named"
+                },
+                "protection": {
+                  "compartment": "identity",
+                  "revealPolicy": "dual_control"
+                }
+              }
+            ]
+          },
+          {
+            "id": "account",
+            "title": "What happened",
+            "fields": [
+              {
+                "id": "narrative",
+                "type": "long_text",
+                "label": "Tell us what happened",
+                "required": true,
+                "helpText": "Write as much or as little as you can. Spelling and format do not matter.",
+                "validation": {
+                  "minLength": 5,
+                  "maxLength": 20000
+                }
+              },
+              {
+                "id": "when",
+                "type": "short_text",
+                "label": "When did it happen?",
+                "required": false,
+                "validation": {
+                  "maxLength": 200
+                }
+              },
+              {
+                "id": "supporting_files",
+                "type": "file",
+                "label": "Files (optional)",
+                "required": false,
+                "acceptedMimeTypes": [
+                  "application/pdf",
+                  "image/png",
+                  "image/jpeg",
+                  "text/plain"
+                ],
+                "maxFiles": 3,
+                "publicUpload": {
+                  "documentTypeKey": "supporting_material",
+                  "visibility": "internal"
+                }
+              }
+            ]
+          }
+        ],
+        "translations": {
+          "es": {
+            "name": "Hacer un informe",
+            "description": "Cuéntenos lo que pasó. Usted decide cuánto decir sobre sí mismo.",
+            "intro": "Describa lo que pasó con sus propias palabras. Puede permanecer en el anonimato.",
+            "submitLabel": "Enviar informe",
+            "confirmationMessage": "Gracias. Hemos recibido su informe.",
+            "sections": {
+              "about_you": {
+                "title": "Sobre usted",
+                "description": "En esta sección solo es obligatorio elegir cómo quiere participar."
+              },
+              "account": {
+                "title": "Qué pasó"
+              }
+            },
+            "fields": {
+              "participation": {
+                "label": "¿Cómo quiere participar?",
+                "helpText": "Anónimo: no podremos responderle. Seudónimo: podremos escribirle mediante una página privada de seguimiento sin saber quién es. Con nombre: comparte datos de contacto, que se guardan cifrados.",
+                "options": {
+                  "anonymous": "De forma anónima",
+                  "pseudonymous": "Con un seudónimo",
+                  "named": "Con mi nombre"
+                }
+              },
+              "preferred_name": {
+                "label": "Nombre o seudónimo"
+              },
+              "contact_email": {
+                "label": "Correo electrónico"
+              },
+              "narrative": {
+                "label": "Cuéntenos lo que pasó",
+                "helpText": "Escriba tanto o tan poco como pueda. La ortografía y el formato no importan."
+              },
+              "when": {
+                "label": "¿Cuándo ocurrió?"
+              },
+              "supporting_files": {
+                "label": "Archivos (opcional)"
+              }
+            },
+            "ui": {
+              "requiredHint": "Los campos marcados con * son obligatorios.",
+              "required": "(obligatorio)",
+              "selectOption": "Seleccione una opción",
+              "costNotice": "Enviar este formulario es gratuito. No necesita abogado ni documentos bien redactados: cuente lo ocurrido con sus propias palabras.",
+              "saveDraft": "Guardar y continuar más tarde",
+              "draftSavedTitle": "Borrador guardado",
+              "draftSavedIntro": "Guarde este código en un lugar seguro. Cualquier persona con el código puede abrir el borrador. Solo se muestra ahora.",
+              "draftResumeCode": "Código para continuar",
+              "draftNotIncluded": "Los archivos y las respuestas protegidas no se guardan en el borrador; añádalos de nuevo antes de enviar.",
+              "resumeTitle": "Continuar un borrador guardado",
+              "resumeCodeLabel": "Código para continuar",
+              "resumeButton": "Abrir borrador",
+              "resumeFailed": "Ese código no abre ningún borrador guardado de este formulario. Compruébelo e inténtelo de nuevo.",
+              "resumeLoaded": "Se ha cargado su borrador.",
+              "receivedTitle": "Informe recibido",
+              "trackingCode": "Código de seguimiento",
+              "portalTitle": "Acceso de seguimiento",
+              "portalIntro": "Guarde los dos valores siguientes. La clave de acceso solo se muestra ahora y no se puede recuperar después.",
+              "accessSecret": "Clave de acceso",
+              "openPortal": "Abrir la página de seguimiento",
+              "uploadQuarantineNotice": "Los archivos subidos quedan en cuarentena y se revisan antes de que nadie pueda abrirlos.",
+              "errorSummaryTitle": "Revise sus respuestas",
+              "errorSummaryIntro": "Corrija lo siguiente y envíe el formulario de nuevo.",
+              "validationRequired": "Este campo es obligatorio.",
+              "language": "Idioma",
+              "submitting": "Enviando…",
+              "savingDraft": "Guardando…"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "routingRules": [
+    {
+      "key": "example_route",
+      "name": "Example Route",
+      "priority": 100,
+      "targetQueueSlug": "example_queue",
+      "definition": {
+        "schemaVersion": 1,
+        "match": "all",
+        "conditions": [
+          {
+            "field": "case_type",
+            "operator": "equals",
+            "value": "example_form"
+          }
+        ]
+      }
+    },
+    {
+      "key": "report_route",
+      "name": "Report route",
+      "priority": 90,
+      "targetQueueSlug": "example_queue",
+      "definition": {
+        "schemaVersion": 1,
+        "match": "all",
+        "conditions": [
+          {
+            "field": "case_type",
+            "operator": "equals",
+            "value": "report"
+          }
+        ]
+      }
+    }
+  ],
+  "reviewPolicies": [
+    {
+      "key": "example_review",
+      "name": "Example Review",
+      "description": "Neutral independent-review policy for contract testing.",
+      "level": 1,
+      "eligibleCaseStatuses": [
+        "state_c"
+      ],
+      "filingWindow": {
+        "value": 10,
+        "unit": "business_days"
+      },
+      "decisionDeadline": {
+        "value": 5,
+        "unit": "business_days"
+      },
+      "decisionWarningBefore": {
+        "value": 1,
+        "unit": "business_days"
+      },
+      "calendarKey": "example_calendar",
+      "allowedOutcomes": [
+        "outcome_a",
+        "outcome_b"
+      ],
+      "requireIndependentReviewer": true,
+      "prerequisitePolicyKeys": []
+    }
+  ],
+  "referralPolicies": [
+    {
+      "key": "example_external_referral",
+      "name": "Example External Referral",
+      "description": "Neutral policy used to validate parallel referral tracking.",
+      "definition": {
+        "schemaVersion": 1,
+        "deadlinePolicies": [
+          {
+            "key": "example_acknowledgment",
+            "label": "Example acknowledgment",
+            "trigger": "sent",
+            "duration": {
+              "value": 2,
+              "unit": "business_days"
+            },
+            "warningBefore": {
+              "value": 1,
+              "unit": "business_days"
+            },
+            "calendarKey": "example_calendar",
+            "completeOnEvents": [
+              "acknowledged",
+              "preliminary_response",
+              "status_update",
+              "final_response",
+              "completed",
+              "cancelled"
+            ],
+            "escalation": {
+              "priority": "high",
+              "queueSlug": "example_queue"
+            }
+          },
+          {
+            "key": "example_final_response",
+            "label": "Example final response",
+            "trigger": "sent",
+            "duration": {
+              "value": 10,
+              "unit": "calendar_days"
+            },
+            "warningBefore": {
+              "value": 2,
+              "unit": "calendar_days"
+            },
+            "pausable": true,
+            "completeOnEvents": [
+              "final_response",
+              "completed",
+              "cancelled"
+            ],
+            "escalation": {
+              "priority": "high",
+              "queueSlug": "example_queue"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "operationalViews": [
+    {
+      "key": "example_open_work",
+      "name": "Example Open Work",
+      "description": "Neutral application-defined operational view.",
+      "definition": {
+        "statuses": [],
+        "priorities": [],
+        "queueSlugs": [
+          "example_queue"
+        ],
+        "tags": [],
+        "focus": "open",
+        "sort": "priority_desc",
+        "limit": 50
+      }
+    }
+  ],
+  "operationalMetrics": [
+    {
+      "key": "example_open_work_count",
+      "name": "Example Open Work Count",
+      "type": "case_count",
+      "viewKey": "example_open_work"
+    },
+    {
+      "key": "example_deadline_compliance",
+      "name": "Example Deadline Compliance",
+      "type": "deadline_compliance",
+      "policyKeys": [
+        "example_deadline"
+      ],
+      "deadlineScope": "case",
+      "windowDays": 365
+    },
+    {
+      "key": "example_referral_compliance",
+      "name": "Example Referral Compliance",
+      "type": "deadline_compliance",
+      "policyKeys": [
+        "example_acknowledgment",
+        "example_final_response"
+      ],
+      "deadlineScope": "referral",
+      "windowDays": 365
+    }
+  ]
+}

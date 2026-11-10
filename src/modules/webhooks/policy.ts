@@ -34,12 +34,48 @@ export function normalizeWebhookEventTypes(
   return types.sort();
 }
 
+/**
+ * Exact origins (comma separated, e.g. `http://127.0.0.1:8090`) that an
+ * operator has explicitly approved as webhook destinations even though they
+ * are private or plain HTTP: a co-located downstream application. Everything
+ * else must be public HTTPS.
+ */
+export function allowedPrivateWebhookOrigins(): ReadonlySet<string> {
+  const origins = new Set<string>();
+  for (const raw of (process.env.WEBHOOK_ALLOWED_PRIVATE_ORIGINS ?? "").split(",")) {
+    const value = raw.trim();
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      if (
+        (url.protocol === "http:" || url.protocol === "https:") &&
+        !url.username &&
+        !url.password
+      ) {
+        origins.add(url.origin);
+      }
+    } catch {
+      // Ignore malformed entries: they approve nothing.
+    }
+  }
+  return origins;
+}
+
 export function normalizeWebhookUrl(value: string) {
   let url: URL;
   try {
     url = new URL(value.trim());
   } catch {
     throw new Error("Webhook URL is invalid.");
+  }
+
+  if (
+    !url.username &&
+    !url.password &&
+    allowedPrivateWebhookOrigins().has(url.origin)
+  ) {
+    url.hash = "";
+    return url.toString();
   }
 
   if (url.protocol !== "https:") {
@@ -73,6 +109,7 @@ export async function assertWebhookDestinationPublic(
   endpointUrl: string,
 ) {
   const url = new URL(normalizeWebhookUrl(endpointUrl));
+  if (allowedPrivateWebhookOrigins().has(url.origin)) return;
   const hostname = normalizedHostname(url.hostname);
   if (isIP(hostname)) {
     if (isPrivateAddress(hostname)) {

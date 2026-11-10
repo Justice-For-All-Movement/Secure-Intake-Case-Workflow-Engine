@@ -16,23 +16,35 @@ import {
   type PublicFormActionState,
 } from "@/modules/forms/public-action-state";
 import { visibleFieldIdsForDefinition } from "@/modules/forms/visibility";
+import {
+  defaultFormUiStrings,
+  type FormUiStrings,
+} from "@/modules/forms/form-ui-strings";
 
 export function FormRenderer({
   definition,
   action,
+  ui = defaultFormUiStrings,
+  locale,
 }: {
   definition: FormDefinition;
   action: (
     previousState: PublicFormActionState,
     formData: FormData,
   ) => Promise<PublicFormActionState>;
+  ui?: FormUiStrings;
+  locale?: string;
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const [draftCode, setDraftCode] = useState("");
+  const [draftGeneration, setDraftGeneration] = useState(0);
   const [state, formAction, pending] = useActionState(
     action,
     initialPublicFormActionState,
   );
   const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const draftNoticeRef = useRef<HTMLDivElement>(null);
+  const resumable = definition.resumableDrafts !== false;
 
   const record = (fieldId: string, value: unknown) => {
     setAnswers((current) => ({ ...current, [fieldId]: value }));
@@ -41,50 +53,68 @@ export function FormRenderer({
     definition,
     answers,
   );
+  const translateError = (message: string) =>
+    message === defaultFormUiStrings.validationRequired
+      ? ui.validationRequired
+      : message;
   const errorsByField = new Map(
-    state.errors.map((error) => [error.fieldId, error.message]),
+    state.errors.map((error) => [
+      error.fieldId,
+      translateError(error.message),
+    ]),
   );
 
   useEffect(() => {
     if (state.status === "validation_error") {
       errorSummaryRef.current?.focus();
     }
+    if (state.status === "draft_loaded") {
+      setAnswers(state.draftAnswers ?? {});
+      setDraftCode(state.resumeCode ?? "");
+      setDraftGeneration((value) => value + 1);
+      draftNoticeRef.current?.focus();
+    }
+    if (state.status === "draft_saved") {
+      setDraftCode(state.resumeCode ?? "");
+      draftNoticeRef.current?.focus();
+    }
+    if (state.status === "draft_not_found") {
+      draftNoticeRef.current?.focus();
+    }
   }, [state]);
 
   if (state.status === "submitted") {
     return (
       <section role="status" aria-live="polite">
-        <h2>Submission received</h2>
+        <h2>{ui.receivedTitle}</h2>
         {definition.confirmationMessage ? (
           <p>{definition.confirmationMessage}</p>
         ) : (
-          <p>Your submission has been recorded.</p>
+          <p>{ui.receivedDefault}</p>
         )}
         {state.confirmationCode ? (
           <p>
-            Tracking code: <strong>{state.confirmationCode}</strong>
+            {ui.trackingCode}: <strong>{state.confirmationCode}</strong>
           </p>
         ) : null}
         {state.participantPortal ? (
           <>
-            <h3>Participant portal access</h3>
+            <h3>{ui.portalTitle}</h3>
+            <p>{ui.portalIntro}</p>
             <p>
-              Save both values below. The access secret is shown only in
-              this immediate submission result and cannot be recovered
-              from the receipt code.
+              {ui.trackingCode}:{" "}
+              <code data-testid="tracking-code">
+                {state.participantPortal.trackingCode}
+              </code>
             </p>
             <p>
-              Tracking code:{" "}
-              <code>{state.participantPortal.trackingCode}</code>
+              {ui.accessSecret}:{" "}
+              <code data-testid="access-secret">
+                {state.participantPortal.accessSecret}
+              </code>
             </p>
             <p>
-              Access secret:{" "}
-              <code>{state.participantPortal.accessSecret}</code>
-            </p>
-            <p>
-              <a href={state.participantPortal.loginPath}>
-                Open participant portal
-              </a>
+              <a href={state.participantPortal.loginPath}>{ui.openPortal}</a>
             </p>
           </>
         ) : null}
@@ -94,11 +124,61 @@ export function FormRenderer({
 
 
   return (
+    <>
+      {resumable ? (
+        <details className="draft-resume">
+          <summary>{ui.resumeTitle}</summary>
+          <form action={formAction}>
+            <input type="hidden" name="__intent" value="resume" />
+            <label htmlFor="resume-code">{ui.resumeCodeLabel}</label>
+            <input
+              id="resume-code"
+              name="__resume_code"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              maxLength={200}
+            />
+            <button type="submit" disabled={pending}>
+              {ui.resumeButton}
+            </button>
+          </form>
+        </details>
+      ) : null}
+
+      <div
+        ref={draftNoticeRef}
+        tabIndex={-1}
+        role="status"
+        aria-live="polite"
+        className={
+          state.status === "draft_not_found" ? "error-summary" : undefined
+        }
+      >
+        {state.status === "draft_saved" ? (
+          <>
+            <h2>{ui.draftSavedTitle}</h2>
+            <p>{ui.draftSavedIntro}</p>
+            <p>
+              {ui.draftResumeCode}:{" "}
+              <code data-testid="resume-code">{state.resumeCode}</code>
+            </p>
+            <p>{ui.draftNotIncluded}</p>
+          </>
+        ) : null}
+        {state.status === "draft_loaded" ? <p>{ui.resumeLoaded}</p> : null}
+        {state.status === "draft_not_found" ? (
+          <p>{ui.resumeFailed}</p>
+        ) : null}
+      </div>
+
     <form action={formAction} encType="multipart/form-data">
+      <input type="hidden" name="__locale" value={locale ?? ""} />
+      <input type="hidden" name="__draft" value={draftCode} />
       {definition.intro ? <p>{definition.intro}</p> : null}
-      <p className="hint">
-        Fields marked <span aria-hidden="true">*</span> are required.
-      </p>
+      <p className="hint">{ui.costNotice}</p>
+      <p className="hint">{ui.requiredHint}</p>
 
       {state.status === "validation_error" && state.errors.length ? (
         <div
@@ -108,15 +188,14 @@ export function FormRenderer({
           ref={errorSummaryRef}
           aria-labelledby="form-error-heading"
         >
-          <h2 id="form-error-heading">Check your answers</h2>
-          <p>
-            Correct the following {state.errors.length === 1 ? "item" : "items"} and
-            submit the form again.
-          </p>
+          <h2 id="form-error-heading">{ui.errorSummaryTitle}</h2>
+          <p>{ui.errorSummaryIntro}</p>
           <ul>
             {state.errors.map((error, index) => (
               <li key={`${error.fieldId}-${index}`}>
-                <a href={`#field-${error.fieldId}`}>{error.message}</a>
+                <a href={`#field-${error.fieldId}`}>
+                  {translateError(error.message)}
+                </a>
               </li>
             ))}
           </ul>
@@ -131,7 +210,8 @@ export function FormRenderer({
           {section.fields.map((field) =>
             visibleFieldIds.has(field.id) ? (
               <FormFieldControl
-                key={field.id}
+                key={`${field.id}-${draftGeneration}`}
+                ui={ui}
                 field={field}
                 value={answers[field.id]}
                 error={errorsByField.get(field.id)}
@@ -143,23 +223,43 @@ export function FormRenderer({
       ))}
 
       <button type="submit" disabled={pending} aria-disabled={pending}>
-        {pending ? "Submitting…" : definition.submitLabel}
+        {pending ? ui.submitting : definition.submitLabel}
       </button>
+      {resumable ? (
+        <button
+          type="submit"
+          name="__intent"
+          value="save_draft"
+          formNoValidate
+          className="secondary"
+          disabled={pending}
+          aria-disabled={pending}
+        >
+          {pending ? ui.savingDraft : ui.saveDraft}
+        </button>
+      ) : null}
       <span className="sr-only" aria-live="polite">
-        {pending ? "Form submission in progress." : ""}
+        {pending ? ui.submissionInProgress : ""}
       </span>
     </form>
+    </>
   );
 }
 
-function RequiredIndicator({ required }: { required: boolean }) {
+function RequiredIndicator({
+  required,
+  text = defaultFormUiStrings.required,
+}: {
+  required: boolean;
+  text?: string;
+}) {
   if (!required) return null;
   return (
     <>
       <span className="required-marker" aria-hidden="true">
         {" "}*
       </span>
-      <span className="sr-only"> (required)</span>
+      <span className="sr-only"> {text}</span>
     </>
   );
 }
@@ -204,7 +304,9 @@ function FormFieldControl({
   value,
   error,
   onValueChange,
+  ui,
 }: {
+  ui: FormUiStrings;
   field: FormField;
   value?: unknown;
   error?: string;
@@ -220,7 +322,7 @@ function FormFieldControl({
         <div>
           <label htmlFor={controlId}>
             {field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </label>
           <textarea
             id={controlId}
@@ -254,7 +356,7 @@ function FormFieldControl({
         <div>
           <label htmlFor={controlId}>
             {field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </label>
           <input
             id={controlId}
@@ -308,7 +410,7 @@ function FormFieldControl({
               onChange={(event) => onValueChange(event.currentTarget.checked)}
             />
             {field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </label>
           <FieldMessages field={field} error={error} />
         </div>
@@ -330,7 +432,7 @@ function FormFieldControl({
               onChange={(event) => onValueChange(event.currentTarget.checked)}
             />
             {field.attestationText ?? field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </label>
           <FieldMessages field={field} error={error} />
         </div>
@@ -341,7 +443,7 @@ function FormFieldControl({
         <div>
           <label htmlFor={controlId}>
             {field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </label>
           <select
             id={controlId}
@@ -353,7 +455,7 @@ function FormFieldControl({
             onChange={(event) => onValueChange(event.currentTarget.value)}
           >
             <option value="" disabled={required}>
-              Select an option
+              {ui.selectOption}
             </option>
             {(field.options ?? []).map((option) => (
               <option key={option.value} value={option.value}>
@@ -375,7 +477,7 @@ function FormFieldControl({
         >
           <legend>
             {field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </legend>
           {(field.options ?? []).map((option) => (
             <label key={option.value}>
@@ -406,6 +508,7 @@ function FormFieldControl({
     case "address":
       return (
         <AddressFieldControl
+          ui={ui}
           field={field}
           required={required}
           value={value}
@@ -425,7 +528,7 @@ function FormFieldControl({
         >
           <legend>
             {field.label}
-            <RequiredIndicator required={required} />
+            <RequiredIndicator required={required} text={ui.required} />
           </legend>
           <input
             name={field.id}
@@ -444,8 +547,8 @@ function FormFieldControl({
           />
           <small>
             {publicUploadEnabled
-              ? "Uploaded files are quarantined and cannot be used as trusted evidence until malware scanning records a clean result."
-              : "Secure attachment upload is not enabled for this field."}
+              ? ui.uploadQuarantineNotice
+              : ui.uploadDisabled}
           </small>
           <FieldMessages field={field} error={error} />
         </fieldset>
@@ -456,14 +559,15 @@ function FormFieldControl({
 
 function addressLabel(
   part: "line1" | "line2" | "city" | "region" | "postalCode" | "country",
+  ui: FormUiStrings,
 ) {
   const labels = {
-    line1: "Address line 1",
-    line2: "Address line 2",
-    city: "City",
-    region: "State / region",
-    postalCode: "Postal code",
-    country: "Country",
+    line1: ui.addressLine1,
+    line2: ui.addressLine2,
+    city: ui.addressCity,
+    region: ui.addressRegion,
+    postalCode: ui.addressPostalCode,
+    country: ui.addressCountry,
   };
   return labels[part];
 }
@@ -474,7 +578,9 @@ function AddressFieldControl({
   value,
   error,
   onValueChange,
+  ui,
 }: {
+  ui: FormUiStrings;
   field: FormField;
   required: boolean;
   value?: unknown;
@@ -504,7 +610,7 @@ function AddressFieldControl({
     >
       <legend>
         {field.label}
-        <RequiredIndicator required={required} />
+        <RequiredIndicator required={required} text={ui.required} />
       </legend>
       {(["line1", "line2", "city", "region", "postalCode", "country"] as const).map(
         (part) => {
@@ -512,8 +618,9 @@ function AddressFieldControl({
           return (
             <div key={part}>
               <label htmlFor={inputId}>
-                {addressLabel(part)}
+                {addressLabel(part, ui)}
                 <RequiredIndicator
+                  text={ui.required}
                   required={
                     required &&
                     ["line1", "city", "region", "postalCode", "country"].includes(

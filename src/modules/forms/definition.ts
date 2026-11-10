@@ -164,9 +164,56 @@ const participantPortalSchema = z.object({
   messagingCondition: conditionSchema.optional(),
 });
 
+const localeTag = z
+  .string()
+  .min(2)
+  .max(35)
+  .regex(
+    /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/,
+    "Use a BCP 47 language tag such as en, es or uk.",
+  );
+
+const fieldTranslationSchema = z.object({
+  label: z.string().min(1).max(500).optional(),
+  helpText: z.string().max(2000).optional(),
+  placeholder: z.string().max(500).optional(),
+  attestationText: z.string().max(5000).optional(),
+  options: z.record(z.string(), z.string().min(1).max(300)).optional(),
+});
+
+/**
+ * Per-locale text for one form, supplied as data. Anything omitted falls back
+ * to the default-locale text in the definition itself. `ui` overrides the
+ * renderer's built-in interface strings (see form-ui-strings.ts for keys).
+ */
+export const formTranslationSchema = z.object({
+  name: z.string().min(1).max(300).optional(),
+  description: z.string().max(4000).optional(),
+  direction: z.enum(["ltr", "rtl"]).optional(),
+  intro: z.string().max(10000).optional(),
+  submitLabel: z.string().min(1).max(100).optional(),
+  confirmationMessage: z.string().max(5000).optional(),
+  sections: z
+    .record(
+      z.string(),
+      z.object({
+        title: z.string().min(1).max(500).optional(),
+        description: z.string().max(4000).optional(),
+      }),
+    )
+    .optional(),
+  fields: z.record(z.string(), fieldTranslationSchema).optional(),
+  ui: z.record(z.string(), z.string().max(1000)).optional(),
+});
+
+export type FormTranslation = z.infer<typeof formTranslationSchema>;
+
 export const formDefinitionSchema = z
   .object({
     schemaVersion: z.literal(1),
+    defaultLocale: localeTag.optional(),
+    translations: z.record(localeTag, formTranslationSchema).optional(),
+    resumableDrafts: z.boolean().optional(),
     intro: z.string().max(10000).optional(),
     submitLabel: z.string().min(1).max(100).default("Submit"),
     confirmationMessage: z.string().max(5000).optional(),
@@ -201,6 +248,29 @@ export const formDefinitionSchema = z
         fieldOrder.set(field.id, nextFieldIndex++);
       });
     });
+
+    for (const [locale, translation] of Object.entries(
+      definition.translations ?? {},
+    )) {
+      for (const sectionId of Object.keys(translation.sections ?? {})) {
+        if (!sectionIds.has(sectionId)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Translation ${locale} references unknown section: ${sectionId}`,
+            path: ["translations", locale, "sections", sectionId],
+          });
+        }
+      }
+      for (const fieldId of Object.keys(translation.fields ?? {})) {
+        if (!fieldIds.has(fieldId)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Translation ${locale} references unknown field: ${fieldId}`,
+            path: ["translations", locale, "fields", fieldId],
+          });
+        }
+      }
+    }
 
     const protectionByField = new Map(
       fieldsInDefinition(definition).map((field) => [

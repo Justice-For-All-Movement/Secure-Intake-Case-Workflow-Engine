@@ -1,3 +1,4 @@
+import { checksumJson } from "@/modules/application/canonical";
 import { and, desc, eq, max } from "drizzle-orm";
 import type {
   Database,
@@ -401,6 +402,8 @@ export async function insertSubmission(
     answers: Record<string, unknown>;
     draftTokenHash?: string | null;
     confirmationCode?: string | null;
+    locale?: string | null;
+    channel?: "public_form" | "api";
   },
 ) {
   const submittedAt =
@@ -417,6 +420,12 @@ export async function insertSubmission(
       answers: input.answers,
       draftTokenHash: input.draftTokenHash ?? null,
       confirmationCode: input.confirmationCode ?? null,
+      locale: input.locale ?? null,
+      channel: input.channel ?? "public_form",
+      originalSha256:
+        input.status === "submitted"
+          ? checksumJson(input.answers)
+          : null,
       submittedAt,
     })
     .returning();
@@ -449,11 +458,13 @@ export async function updateDraftSubmission(
   db: DbExecutor,
   submissionId: string,
   answers: Record<string, unknown>,
+  locale?: string | null,
 ) {
   const [submission] = await db
     .update(intakeSubmissions)
     .set({
       answers,
+      ...(locale ? { locale } : {}),
       updatedAt: new Date(),
     })
     .where(
@@ -497,6 +508,7 @@ export async function finalizeDraftSubmission(
       answers,
       status: "submitted",
       confirmationCode,
+      originalSha256: checksumJson(answers),
       draftTokenHash: null,
       submittedAt: new Date(),
       updatedAt: new Date(),

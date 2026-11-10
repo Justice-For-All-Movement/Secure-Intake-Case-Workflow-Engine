@@ -51,6 +51,7 @@ export async function createPublicDraftSubmission(
   organizationSlug: string,
   formSlug: string,
   rawAnswers: AnswerMap,
+  options: { locale?: string | null } = {},
 ): Promise<DraftSubmissionResult> {
   const published = await findPublishedFormBySlugs(
     db,
@@ -85,6 +86,7 @@ export async function createPublicDraftSubmission(
       formVersionId: published.version.id,
       status: "draft",
       answers: split.ordinaryAnswers,
+      locale: options.locale ?? null,
       draftTokenHash: hashDraftResumeToken(resumeToken),
     });
 
@@ -108,6 +110,7 @@ export async function updateDraftSubmissionByToken(
   db: Database,
   resumeToken: string,
   rawAnswers: AnswerMap,
+  options: { locale?: string | null } = {},
 ) {
   const submission = await findSubmissionDraftByTokenHash(
     db,
@@ -135,6 +138,7 @@ export async function updateDraftSubmissionByToken(
       tx,
       submission.id,
       split.ordinaryAnswers,
+      options.locale ?? null,
     );
     if (!updated) {
       throw new FormNotAvailableError();
@@ -155,6 +159,7 @@ export async function submitDraftSubmissionByToken(
   db: Database,
   resumeToken: string,
   rawAnswers: AnswerMap,
+  stagedUploads: readonly StagedPublicUpload[] = [],
 ) {
   const submission = await findSubmissionDraftByTokenHash(
     db,
@@ -195,6 +200,15 @@ export async function submitDraftSubmissionByToken(
       encrypt: encryptProtectedPayload,
     });
 
+    if (stagedUploads.length > 0) {
+      await persistStagedPublicUploads(
+        tx,
+        createTrustedTenantScope(finalized.organizationId),
+        finalized.id,
+        stagedUploads,
+      );
+    }
+
     const participantPortal = definition.participantPortal?.enabled
       ? await issueExternalParticipantCredentialInTransaction(tx, {
           organizationId: finalized.organizationId,
@@ -217,12 +231,17 @@ export async function submitPublicForm(
   rawAnswers: AnswerMap,
   submitterUserId?: string | null,
   stagedUploads: readonly StagedPublicUpload[] = [],
+  options: {
+    locale?: string | null;
+    channel?: "public_form" | "api";
+    publicOnly?: boolean;
+  } = {},
 ) {
   const published = await findPublishedFormBySlugs(
     db,
     organizationSlug,
     formSlug,
-    { publicOnly: true },
+    { publicOnly: options.publicOnly ?? true },
   );
 
   if (!published) {
@@ -252,6 +271,8 @@ export async function submitPublicForm(
       status: "submitted",
       answers: split.ordinaryAnswers,
       confirmationCode: createConfirmationCode(),
+      locale: options.locale ?? null,
+      channel: options.channel ?? "public_form",
     });
 
     await synchronizeProtectedCompartments(tx, {
@@ -283,4 +304,42 @@ export async function submitPublicForm(
       participantPortalSecret: participantPortal?.secret ?? null,
     };
   });
+}
+
+/**
+ * Loads a draft for its owner. Returns null — never a reason — when the code
+ * is unknown, already submitted, malformed, or belongs to another form, so
+ * the response does not reveal whether a draft exists. Protected answers are
+ * not returned: they are write-only until an authorized reveal.
+ */
+export async function loadDraftSubmissionByToken(
+  db: Database,
+  resumeToken: string,
+  expected: { organizationSlug: string; formSlug: string },
+) {
+  const token = resumeToken.trim();
+  if (token.length < 20 || token.length > 200) return null;
+  const submission = await findSubmissionDraftByTokenHash(
+    db,
+    hashDraftResumeToken(token),
+  );
+  if (!submission) return null;
+  const published = await findPublishedFormBySlugs(
+    db,
+    expected.organizationSlug,
+    expected.formSlug,
+    { publicOnly: true },
+  );
+  if (
+    !published ||
+    published.form.id !== submission.formId ||
+    published.form.organizationId !== submission.organizationId
+  ) {
+    return null;
+  }
+  return {
+    answers: submission.answers,
+    locale: submission.locale,
+    updatedAt: submission.updatedAt,
+  };
 }

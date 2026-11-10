@@ -23,7 +23,10 @@
     "app:manifest": "tsx scripts/apply-application-manifest.ts",
     "test:a11y": "vitest run src/accessibility",
     "test:integration": "tsx integration/generic-contract.ts",
-    "verify:release-contract": "tsx scripts/verify-release-contract.ts"
+    "verify:release-contract": "tsx scripts/verify-release-contract.ts",
+    "api:create-client": "tsx scripts/create-api-client.ts",
+    "start:local": "bash scripts/local-start.sh",
+    "test:pg": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

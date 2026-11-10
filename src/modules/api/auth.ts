@@ -81,7 +81,7 @@ export async function createApiClient(
     permissions: readonly string[];
     rateLimitPerMinute?: number;
     expiresAt?: Date | null;
-    actorUserId: string;
+    actorUserId: string | null;
   },
 ) {
   const name = input.name.trim().slice(0, 120);
@@ -123,7 +123,7 @@ export async function createApiClient(
   await db.insert(auditEvents).values(
     auditEventValues({
       organizationId: scope.organizationId,
-      actorType: "user",
+      actorType: input.actorUserId ? "user" : "system",
       actorUserId: input.actorUserId,
       action: "api.client_created",
       resourceType: "api_client",
@@ -240,19 +240,21 @@ export async function authenticateApiToken(
   const minuteStart = new Date(
     Math.floor(now.getTime() / 60_000) * 60_000,
   );
+  // Raw SQL fragments do not get column-aware Date serialization.
+  const minuteStartSql = sql`${minuteStart.toISOString()}::timestamptz`;
 
   const [rated] = await db
     .update(apiClients)
     .set({
       rateWindowStartedAt: sql`case
         when ${apiClients.rateWindowStartedAt} is null
-          or ${apiClients.rateWindowStartedAt} < ${minuteStart}
-        then ${minuteStart}
+          or ${apiClients.rateWindowStartedAt} < ${minuteStartSql}
+        then ${minuteStartSql}
         else ${apiClients.rateWindowStartedAt}
       end`,
       rateWindowCount: sql`case
         when ${apiClients.rateWindowStartedAt} is null
-          or ${apiClients.rateWindowStartedAt} < ${minuteStart}
+          or ${apiClients.rateWindowStartedAt} < ${minuteStartSql}
         then 1
         else ${apiClients.rateWindowCount} + 1
       end`,

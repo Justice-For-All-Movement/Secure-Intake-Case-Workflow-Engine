@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { runApi } from "@/modules/integration/api";
+import { openCase } from "@/modules/integration/service";
 import { getRuntimeDatabase } from "@/db/runtime";
 import {
   caseSearchDefinitionFromSearchParams,
@@ -61,4 +63,14 @@ export async function GET(request: Request) {
     auth.context,
     paginated(records, limit, offset),
   );
+}
+
+export async function POST(request: Request) {
+  const auth = await authorizeApiRequest(request, ["case:create", "submission:view"]);
+  if (!auth.ok) return auth.response;
+  const context = auth.context;
+  return runApi(context, request, async (body) => {
+    const result = await openCase(getRuntimeDatabase(), context, body);
+    return { status: result.created ? 201 : 200, data: result };
+  });
 }
