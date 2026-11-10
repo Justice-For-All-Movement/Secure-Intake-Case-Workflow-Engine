@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import {
   intakeForms,
@@ -18,6 +18,8 @@ export async function listApiSubmissions(
 ) {
   const conditions = [
     eq(intakeSubmissions.organizationId, scope.organizationId),
+    // An unsubmitted draft belongs to the participant alone.
+    ne(intakeSubmissions.status, "draft"),
   ];
   if (input.status?.trim()) {
     conditions.push(eq(intakeSubmissions.status, input.status.trim()));

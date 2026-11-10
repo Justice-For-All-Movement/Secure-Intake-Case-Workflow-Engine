@@ -91,4 +91,14 @@ jobs:
       - run: npm run test
       - run: npm run test:integration
       - run: npm run build
+      - name: Install scanner and browser for the end-to-end contract suite
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clamav
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: End-to-end contract suite (real Postgres, served app, worker, clamscan, browser)
+        env:
+          TEST_DATABASE_URL: postgres://casework:casework@localhost:5432/casework
+        run: npm run test:pg
       - run: docker build -t secure-intake-case-workflow-engine:ci .

@@ -452,6 +452,8 @@ describe.skipIf(!playwright)("participant journey in a real browser", () => {
     const draftId = (await sql`select id from intake_submissions where draft_token_hash is not null`)[0].id;
     expect((await api(a.token, "GET", `/submissions/${draftId}`)).status).toBe(404);
     expect(listed.status).toBe(200);
+    expect(listed.body.data).toEqual([]);
+    expect((await api(a.token, "GET", "/submissions?limit=100")).text).not.toContain(draftId);
 
     // Unknown code and a real code used on another tenant look identical.
     const outcomes: string[] = [];

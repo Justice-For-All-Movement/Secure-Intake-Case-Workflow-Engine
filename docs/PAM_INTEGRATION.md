@@ -673,7 +673,7 @@ tracking code and access secret.
    `MALWARE_SCANNER_URL`): the job fails and retries, the file stays
    `quarantined/pending` indefinitely and its bytes are never served. Nothing
    is ever assumed clean. Staff with `document:scan_manage` can record a scan
-   result by hand in `/admin/documents`.
+   result by hand on the case page of the staff UI.
 
 Scanners: `clamscan` runs the local ClamAV binary against a private temporary
 copy (`--database=$CLAMSCAN_DATABASE_DIR`; exit 0 clean, 1 infected, other =
@@ -712,7 +712,10 @@ bytes to `MALWARE_SCANNER_URL` and expects `{"status":"clean|infected|failed"}`.
 - Server-side validation messages other than "required" are English only.
 - Filing/deciding reviews and creating teams/queues ad hoc have no service
   endpoint (use the manifest or the staff UI).
-- Drafts have no automatic expiry job.
+- Drafts and stored idempotency keys have no automatic expiry job; public
+  draft creation is not rate limited beyond the deployment's edge controls.
+- CI steps that install ClamAV and a browser for `npm run test:pg` were added
+  but have not run on the hosted CI yet.
 - Webhook delivery to a public HTTPS receiver and the HTTP malware-scanner
   adapter are implemented but were not exercised against a live third party;
   S3 storage likewise. ClamAV was exercised with a locally created signature

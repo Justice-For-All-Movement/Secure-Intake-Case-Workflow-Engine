@@ -56,7 +56,7 @@ export async function POST(
         error: {
           code: "invalid_request",
           message:
-            error instanceof Error
+            error instanceof Error && !/query|relation|constraint/i.test(error.message)
               ? error.message.slice(0, 300)
               : "Webhook could not be created.",
         },

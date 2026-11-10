@@ -2,7 +2,8 @@
 
 ## Prerequisites
 - Node.js 22+
-- Docker with Compose
+- Docker with Compose, or a local PostgreSQL (see `npm run start:local` in
+  [PAM_INTEGRATION.md](PAM_INTEGRATION.md#1-local-start) for the non-Docker path)
 
 ## Local setup
 
