@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   foreignKey,
   index,
@@ -307,6 +308,10 @@ export const apiClients = pgTable(
       onDelete: "set null",
     }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    serviceUserId: uuid("service_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    acknowledgedEventCursor: text("acknowledged_event_cursor"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -521,6 +526,9 @@ export const intakeSubmissions = pgTable(
       .default({}),
     draftTokenHash: text("draft_token_hash"),
     confirmationCode: text("confirmation_code"),
+    locale: text("locale"),
+    originalSha256: text("original_sha256"),
+    channel: text("channel").notNull().default("public_form"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1447,6 +1455,14 @@ export const auditEvents = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
+    // Assigned by the database (migration 0021); never supplied by callers.
+    sequence: bigint("sequence", { mode: "number" })
+      .notNull()
+      .default(sql`nextval('audit_events_sequence_seq')`),
+    txid: bigint("txid", { mode: "number" })
+      .notNull()
+      .default(sql`txid_current()`),
+    eventType: text("event_type"),
   },
   (table) => [
     index("audit_events_organization_time_idx").on(
@@ -2598,6 +2614,69 @@ export const disclosurePublicationDocuments = pgTable(
     uniqueIndex("disclosure_publication_documents_unique_idx").on(
       table.publicationVersionId,
       table.documentDerivativeId,
+    ),
+  ],
+);
+
+
+export const apiIdempotencyKeys = pgTable(
+  "api_idempotency_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    apiClientId: uuid("api_client_id")
+      .notNull()
+      .references(() => apiClients.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestMethod: text("request_method").notNull(),
+    requestPath: text("request_path").notNull(),
+    requestSha256: text("request_sha256").notNull(),
+    responseStatus: integer("response_status"),
+    responseBody: jsonb("response_body").$type<unknown>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("api_idempotency_keys_client_key_idx").on(
+      table.apiClientId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+export const participantIdentityLinks = pgTable(
+  "participant_identity_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => intakeSubmissions.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    subject: text("subject").notNull(),
+    createdByApiClientId: uuid("created_by_api_client_id").references(
+      () => apiClients.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("participant_identity_links_submission_provider_idx").on(
+      table.submissionId,
+      table.provider,
+    ),
+    index("participant_identity_links_subject_idx").on(
+      table.organizationId,
+      table.provider,
+      table.subject,
     ),
   ],
 );
