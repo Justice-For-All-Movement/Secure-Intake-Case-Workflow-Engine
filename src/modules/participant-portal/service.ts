@@ -1,3 +1,8 @@
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import {
+  externalParticipantCredentials,
+  externalParticipantSessions,
+} from "@/db/schema";
 import type {
   Database,
   DatabaseTransaction,
@@ -450,4 +455,70 @@ export async function logoutExternalParticipant(
     db,
     hashExternalParticipantSessionToken(token),
   );
+}
+
+/**
+ * Participant-initiated recovery: an authenticated participant replaces the
+ * access secret (for example after it may have been seen by someone else).
+ * The previous secret stops working immediately and every other session for
+ * the credential is revoked. The new secret is returned once, never stored.
+ * Staff and API clients cannot call this: there is deliberately no staff
+ * path that could take over a participant's access.
+ */
+export async function rotateExternalParticipantSecret(
+  db: Database,
+  context: ExternalParticipantContext,
+) {
+  const secret = createExternalParticipantSecret();
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const [credential] = await tx
+      .update(externalParticipantCredentials)
+      .set({
+        secretHash: hashExternalParticipantSecret(secret),
+        credentialVersion: sql`${externalParticipantCredentials.credentialVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(externalParticipantCredentials.id, context.credentialId),
+          eq(
+            externalParticipantCredentials.organizationId,
+            context.scope.organizationId,
+          ),
+          eq(externalParticipantCredentials.status, "active"),
+        ),
+      )
+      .returning();
+    if (!credential) {
+      throw new ExternalParticipantPortalError(
+        "The access secret could not be replaced.",
+      );
+    }
+    await tx
+      .update(externalParticipantSessions)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(externalParticipantSessions.credentialId, credential.id),
+          ne(externalParticipantSessions.id, context.sessionId),
+          isNull(externalParticipantSessions.revokedAt),
+        ),
+      );
+    await tx.insert(auditEvents).values(
+      auditEventValues({
+        organizationId: context.scope.organizationId,
+        actorType: "anonymous",
+        action: "participant_portal.secret_rotated",
+        resourceType: "external_participant_credential",
+        resourceId: credential.id,
+        parentResourceType: "submission",
+        parentResourceId: context.submission.id,
+        newState: { credentialVersion: credential.credentialVersion },
+        source: "participant_portal",
+        occurredAt: now,
+      }),
+    );
+    return { secret, credentialVersion: credential.credentialVersion };
+  });
 }

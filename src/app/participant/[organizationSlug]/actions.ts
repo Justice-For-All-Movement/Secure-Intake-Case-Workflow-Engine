@@ -11,6 +11,7 @@ import {
   authenticateExternalParticipant,
   ExternalParticipantAuthenticationError,
   logoutExternalParticipant,
+  rotateExternalParticipantSecret,
   resolveExternalParticipantContext,
   sendExternalParticipantMessage,
 } from "@/modules/participant-portal/service";
@@ -141,4 +142,33 @@ export async function externalParticipantMessageAction(
       organizationSlug,
     )}/portal?sent=1`,
   );
+}
+
+export interface RotateSecretState {
+  status: "idle" | "rotated" | "failed";
+  accessSecret?: string;
+}
+
+export async function externalParticipantRotateSecretAction(
+  organizationSlug: string,
+  _previous: RotateSecretState,
+  _formData: FormData,
+): Promise<RotateSecretState> {
+  const token = await readExternalParticipantSessionToken();
+  const context = token
+    ? await resolveExternalParticipantContext(getRuntimeDatabase(), {
+        organizationSlug,
+        sessionToken: token,
+      })
+    : null;
+  if (!context) return { status: "failed" };
+  try {
+    const rotated = await rotateExternalParticipantSecret(
+      getRuntimeDatabase(),
+      context,
+    );
+    return { status: "rotated", accessSecret: rotated.secret };
+  } catch {
+    return { status: "failed" };
+  }
 }

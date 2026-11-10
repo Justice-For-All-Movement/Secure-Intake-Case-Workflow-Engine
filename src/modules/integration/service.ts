@@ -16,6 +16,7 @@ import {
   organizationMemberships,
   organizations,
   participantIdentityLinks,
+  roles,
   submissionProtectedCompartments,
   users,
 } from "@/db/schema";
@@ -57,6 +58,7 @@ import { decryptProtectedPayload } from "@/modules/protected-data/crypto";
 import {
   applyRoutingRules,
   manualAssignCase,
+  RoutingTargetUnavailableError,
 } from "@/modules/routing/service";
 import {
   findTransition,
@@ -515,7 +517,7 @@ export async function openCase(
         : undefined,
     }));
 
-  let routing: "applied" | "skipped" | "failed" = "skipped";
+  let routing: "applied" | "skipped" | "unavailable" | "failed" = "skipped";
   if (!existing && body.route !== false) {
     try {
       await applyRoutingRules(db, ctx.tenantScope, {
@@ -523,8 +525,12 @@ export async function openCase(
         actorUserId,
       });
       routing = "applied";
-    } catch {
-      routing = "failed";
+    } catch (error) {
+      // The case exists either way; an unroutable case stays unassigned.
+      routing =
+        error instanceof RoutingTargetUnavailableError
+          ? "unavailable"
+          : "failed";
     }
   }
   return {
@@ -547,7 +553,7 @@ export async function transitionCaseByKey(
     100,
   );
   const workflow = parseWorkflowDefinition(record.workflowDefinition);
-  if (!findTransition(workflow, record.status, transitionKey)) {
+  if (!findTransition(workflow, transitionKey, record.status)) {
     throw new ApiProblem(
       409,
       "transition_unavailable",
@@ -942,6 +948,20 @@ export async function upsertStaffIdentity(
     );
   }
 
+  if (roleKeys.length) {
+    await ensureDefaultRoles(db, ctx.tenantScope);
+    const known = await db
+      .select({ key: roles.key })
+      .from(roles)
+      .where(eq(roles.organizationId, ctx.organizationId));
+    const unknown = roleKeys.filter(
+      (roleKey) => !known.some((role) => role.key === roleKey),
+    );
+    if (unknown.length) {
+      throw invalid(`Unknown role key: ${unknown.join(", ")}`);
+    }
+  }
+
   const result = await db.transaction(async (tx) => {
     const [identity] = await tx
       .select()
@@ -1023,7 +1043,6 @@ export async function upsertStaffIdentity(
   });
 
   if (roleKeys.length) {
-    await ensureDefaultRoles(db, ctx.tenantScope);
     for (const roleKey of roleKeys) {
       try {
         await assignRoleToMembership(

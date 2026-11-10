@@ -1,3 +1,4 @@
+import { RotateSecretForm } from "@/components/participant/rotate-secret-form";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getRuntimeDatabase } from "@/db/runtime";
@@ -11,6 +12,7 @@ import {
 } from "@/modules/participant-portal/service";
 import {
   externalParticipantLogoutAction,
+  externalParticipantRotateSecretAction,
   externalParticipantMessageAction,
 } from "../actions";
 
@@ -222,6 +224,13 @@ export default async function ExternalParticipantPortalPage({
           <p>Secure messaging is not enabled for this submission.</p>
         )}
       </section>
+
+      <RotateSecretForm
+        action={externalParticipantRotateSecretAction.bind(
+          null,
+          organizationSlug,
+        )}
+      />
     </main>
   );
 }
