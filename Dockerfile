@@ -20,4 +20,4 @@ RUN mkdir -p /app/.data/documents && chown -R nextjs:nodejs /app/.data
 
 USER nextjs
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["sh", "scripts/container-start.sh"]
