@@ -134,3 +134,15 @@ This PR adds generic adapters and automatic orchestration. It does not:
 - implement content-disarm-and-reconstruction;
 - create a classified-information channel;
 - make failed scans usable evidence.
+
+## SI-37 transport and diagnostic hardening
+
+S3 and scanner requests use manual redirect handling; a 3xx response fails instead of forwarding signed headers, bearer tokens or document bytes to a different destination. S3 errors report status only, without untrusted upstream body text. Scanner URLs reject query strings and fragments, and final scan failures store a categorical reason rather than an arbitrary exception message. Scanner JSON is bounded to 64 KiB before parsing. Scanner requests enforce a 1 to 300 second timeout. S3 operations use a bounded request timeout (default 120 seconds; `DOCUMENT_S3_TIMEOUT_MS` accepts 1000 through 300000).
+
+These source safeguards do not establish provider key custody, encryption at rest, retention, backup restoration, actual scanner efficacy or production network egress restrictions. Verify those against the authorized deployment.
+
+## SI-37 create-only version writes
+
+S3 PUT now sends `If-None-Match: *`, included in the Signature Version 4 canonical headers and signed-header list. A preexisting key or competing create therefore fails instead of replacing version bytes when the approved provider supports conditional writes. HTTP 409/412 and provider rejection fail closed, with no unconditional retry, deletion or automatic replacement. GET and DELETE retain their separate existing behavior; this adds no deletion or retention authority.
+
+Regression fixtures reproduced both overwrite and concurrent replacement before the fix. The corrected adapter passes the existing scanner/local/S3 suite plus collision, competing-write, conflict and unsupported-provider cases (19 component tests under Node 22/Vitest 3.2.7). These are isolated transport simulations, not proof of vendor behavior. Before production use, verify the exact provider's signed conditional-PUT semantics with synthetic objects, private bucket permissions, retention/versioning and backup restoration. A provider that ignores conditional headers is unsupported; no compatibility fallback may weaken create-only writes. The local adapter already rejects replacing a key with exclusive file creation.

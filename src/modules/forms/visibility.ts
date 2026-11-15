@@ -38,7 +38,9 @@ export function evaluateCondition(
   condition: FieldCondition,
   answers: AnswerMap,
 ): boolean {
-  const answer = answers[condition.fieldId];
+  const answer = Object.prototype.hasOwnProperty.call(answers, condition.fieldId)
+    ? answers[condition.fieldId]
+    : undefined;
 
   switch (condition.operator) {
     case "exists":
