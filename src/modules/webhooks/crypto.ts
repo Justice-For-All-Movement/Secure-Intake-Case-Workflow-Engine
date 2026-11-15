@@ -37,26 +37,40 @@ export function encryptWebhookSecret(secret: string) {
 }
 
 export function decryptWebhookSecret(value: string) {
-  const [version, ivValue, tagValue, ciphertextValue] = value.split(".");
+  const invalid = () => new Error("Webhook signing secret is invalid.");
+  // Existing accepted secrets are at most 256 UTF-16 characters; 1024 bytes
+  // conservatively covers their UTF-8 representation without unbounded decoding.
+  if (typeof value !== "string" || value.length > 5 + 16 + 22 + Math.ceil(1024 * 4 / 3)) throw invalid();
+  const components = value.split(".");
+  const [version, ivValue, tagValue, ciphertextValue] = components;
   if (
+    components.length !== 4 ||
     version !== "v1" ||
     !ivValue ||
     !tagValue ||
     !ciphertextValue
   ) {
-    throw new Error("Webhook signing secret is invalid.");
+    throw invalid();
   }
 
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    encryptionKey(),
-    Buffer.from(ivValue, "base64url"),
-  );
-  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ciphertextValue, "base64url")),
-    decipher.final(),
-  ]).toString("utf8");
+  const decode = (component: string) => {
+    if (!/^[A-Za-z0-9_-]+$/.test(component)) throw invalid();
+    const bytes = Buffer.from(component, "base64url");
+    if (bytes.toString("base64url") !== component) throw invalid();
+    return bytes;
+  };
+  const iv = decode(ivValue), tag = decode(tagValue), ciphertext = decode(ciphertextValue);
+  if (iv.length !== 12 || tag.length !== 16 || ciphertext.length > 1024) throw invalid();
+  const key = encryptionKey();
+
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    const secret = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+    if (secret.length < 32 || secret.length > 256) throw invalid();
+    return secret;
+  } catch { throw invalid(); }
 }
 
 export function webhookSignature(

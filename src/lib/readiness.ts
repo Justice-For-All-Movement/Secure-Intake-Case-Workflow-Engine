@@ -9,6 +9,8 @@ export type DatabaseReadiness =
 
 export async function checkDatabaseReadiness(
   databaseUrl = process.env.DATABASE_URL,
+  openDatabase = createDatabase,
+  timeoutMs = 5000,
 ): Promise<DatabaseReadiness> {
   if (!databaseUrl) {
     return {
@@ -17,9 +19,20 @@ export async function checkDatabaseReadiness(
     };
   }
 
-  const { client } = createDatabase(databaseUrl);
+  let client: ReturnType<typeof createDatabase>["client"] | undefined;
   try {
-    await client.unsafe("select 1");
+    client = openDatabase(databaseUrl).client;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        client.unsafe("select 1"),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Database readiness timed out.")), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     return {
       ready: true,
       status: "ok",
@@ -30,6 +43,6 @@ export async function checkDatabaseReadiness(
       status: "unavailable",
     };
   } finally {
-    await client.end({ timeout: 1 }).catch(() => undefined);
+    if (client) await client.end({ timeout: 1 }).catch(() => undefined);
   }
 }

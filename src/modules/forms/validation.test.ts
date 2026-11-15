@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseFormDefinition } from "./definition";
 import { validateSubmissionAnswers } from "./validation";
+import { answersFromFormData } from "./form-data";
 
 const definition = parseFormDefinition({
   schemaVersion: 1,
@@ -46,6 +47,35 @@ const definition = parseFormDefinition({
 });
 
 describe("submission validation", () => {
+  it("rejects undeclared nested address data", () => {
+    const addressDefinition = parseFormDefinition({
+      schemaVersion: 1,
+      sections: [{ id: "main", title: "Main", fields: [
+        { id: "address", type: "address", label: "Address" },
+      ] }],
+    });
+    const nested = validateSubmissionAnswers(addressDefinition, {
+      address: { line1: "1 Main St", hidden_note: "unapproved nested data" },
+    });
+    expect(nested.success).toBe(false);
+    expect(validateSubmissionAnswers(addressDefinition, { address: { line1: "1 Main St" } }).success).toBe(true);
+  });
+
+  it("does not read inherited constructor as a submitted answer", () => {
+    const special = parseFormDefinition({
+      schemaVersion: 1,
+      sections: [{ id: "main", title: "Main", fields: [
+        { id: "constructor", type: "short_text", label: "Constructor" },
+        { id: "detail", type: "short_text", label: "Detail", required: true,
+          condition: { fieldId: "constructor", operator: "exists" } },
+      ] }],
+    });
+    const parsed = answersFromFormData(special, new FormData());
+    expect(Object.prototype.hasOwnProperty.call(parsed, "constructor")).toBe(false);
+    expect(validateSubmissionAnswers(special, parsed).success).toBe(true);
+    expect(validateSubmissionAnswers(special, { constructor: "present" }).success).toBe(false);
+  });
+
   it("does not require a hidden conditional field", () => {
     const result = validateSubmissionAnswers(definition, {
       email: "person@example.test",

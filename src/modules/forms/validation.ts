@@ -30,7 +30,9 @@ export function validateSubmissionAnswers(
   for (const field of fieldsInDefinition(definition)) {
     if (!visibleFieldIds.has(field.id)) continue;
 
-    const value = answers[field.id];
+    const value = Object.prototype.hasOwnProperty.call(answers, field.id)
+      ? answers[field.id]
+      : undefined;
     const empty = isEmpty(value);
 
     if (!options.partial && field.required && empty) {
@@ -219,5 +221,8 @@ function isIsoDate(value: string): boolean {
 
 function isAddress(value: unknown): value is Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value).every((part) => typeof part === "string");
+  const allowed = new Set(["line1", "line2", "city", "region", "postalCode", "country"]);
+  return Object.entries(value).every(([part, content]) =>
+    allowed.has(part) && typeof content === "string",
+  );
 }
