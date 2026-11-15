@@ -1,6 +1,6 @@
 # Existing production destinations and monitoring
 
-This engine already has a known Render preview: **https://secure-intake-preview.onrender.com**. Do not create a duplicate service merely because `render.yaml` is checked in. Verify the correct Render workspace and existing service before changing its deployment.
+This engine is deployed on Render (workspace `tea-dbp24r3m8hqs73dtq660`) as service `intake-pam`: **https://intake-pam.onrender.com**, linked to PAM (https://pam-em80.onrender.com). The earlier preview `secure-intake-preview.onrender.com` is not in this workspace and is no longer probed. Do not create a duplicate service merely because `render.yaml` is checked in. Verify the correct Render workspace and existing service before changing its deployment.
 
 The dedicated Neon project is named **Secure Intake Case Workflow Engine**. It is separate from the National Secure Ideas Submission database. Database migrations require an authorized target database, backup/restore plan, and confirmed secrets; the engine does not silently provision a second database.
 
