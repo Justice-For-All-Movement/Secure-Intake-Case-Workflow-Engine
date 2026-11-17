@@ -2,13 +2,36 @@ import { z } from "zod";
 import type { FormDefinition, FormField } from "./definition";
 import { fieldsInDefinition } from "./definition";
 import {
+  type ValidationCode,
+  validationMessage,
+} from "./form-ui-strings";
+
+export {
+  type ValidationCode,
+  validationMessage,
+  validationMessageKeys,
+} from "./form-ui-strings";
+import {
   type AnswerMap,
   visibleFieldIdsForDefinition,
 } from "./visibility";
 
 export interface ValidationError {
   fieldId: string;
+  /** English text (built-in strings); kept for existing API consumers. */
   message: string;
+  /** Language-neutral code; render it with `validationMessage`. */
+  code?: ValidationCode;
+  params?: Record<string, number>;
+}
+
+function validationError(
+  fieldId: string,
+  code: ValidationCode,
+  params?: Record<string, number>,
+): ValidationError {
+  const base = { code, ...(params ? { params } : {}) };
+  return { fieldId, message: validationMessage({ ...base, message: "" }), ...base };
 }
 
 export type SubmissionValidationResult =
@@ -36,7 +59,7 @@ export function validateSubmissionAnswers(
     const empty = isEmpty(value);
 
     if (!options.partial && field.required && empty) {
-      errors.push({ fieldId: field.id, message: "This field is required." });
+      errors.push(validationError(field.id, "required"));
       continue;
     }
 
@@ -76,8 +99,8 @@ function validateField(
   value: unknown,
   errors: ValidationError[],
 ) {
-  const fail = (message: string) =>
-    errors.push({ fieldId: field.id, message });
+  const fail = (code: ValidationCode, params?: Record<string, number>) =>
+    errors.push(validationError(field.id, code, params));
 
   switch (field.type) {
     case "short_text":
@@ -85,12 +108,12 @@ function validateField(
     case "phone":
     case "date": {
       if (typeof value !== "string") {
-        fail("Enter a text value.");
+        fail("text");
         return;
       }
 
       if (field.type === "date" && !isIsoDate(value)) {
-        fail("Enter a valid date.");
+        fail("date");
         return;
       }
 
@@ -100,7 +123,7 @@ function validateField(
 
     case "email": {
       if (typeof value !== "string" || !emailSchema.safeParse(value).success) {
-        fail("Enter a valid email address.");
+        fail("email");
         return;
       }
       validateStringRules(field, value, fail);
@@ -109,14 +132,14 @@ function validateField(
 
     case "number": {
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        fail("Enter a valid number.");
+        fail("number");
         return;
       }
       if (field.validation?.min !== undefined && value < field.validation.min) {
-        fail(`Value must be at least ${field.validation.min}.`);
+        fail("min", { min: field.validation.min });
       }
       if (field.validation?.max !== undefined && value > field.validation.max) {
-        fail(`Value must be no more than ${field.validation.max}.`);
+        fail("max", { max: field.validation.max });
       }
       return;
     }
@@ -124,40 +147,40 @@ function validateField(
     case "boolean":
     case "attestation": {
       if (typeof value !== "boolean") {
-        fail("Choose yes or no.");
+        fail("boolean");
         return;
       }
       if (field.type === "attestation" && field.required && value !== true) {
-        fail("You must affirm this statement to continue.");
+        fail("attestation");
       }
       return;
     }
 
     case "select": {
       if (typeof value !== "string") {
-        fail("Choose a valid option.");
+        fail("option");
         return;
       }
       const allowed = new Set((field.options ?? []).map((option) => option.value));
-      if (!allowed.has(value)) fail("Choose a valid option.");
+      if (!allowed.has(value)) fail("option");
       return;
     }
 
     case "multiselect": {
       if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-        fail("Choose valid options.");
+        fail("options");
         return;
       }
       const allowed = new Set((field.options ?? []).map((option) => option.value));
       if (value.some((item) => !allowed.has(item))) {
-        fail("Choose valid options.");
+        fail("options");
       }
       return;
     }
 
     case "address": {
       if (!isAddress(value)) {
-        fail("Enter a valid address.");
+        fail("address");
         return;
       }
 
@@ -167,18 +190,18 @@ function validateField(
           (part) => !value[part]?.trim(),
         )
       ) {
-        fail("Complete all required address fields.");
+        fail("address_incomplete");
       }
       return;
     }
 
     case "file": {
       if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-        fail("Attachment references are invalid.");
+        fail("attachments");
         return;
       }
       if (field.maxFiles !== undefined && value.length > field.maxFiles) {
-        fail(`Attach no more than ${field.maxFiles} files.`);
+        fail("max_files", { maxFiles: field.maxFiles });
       }
       return;
     }
@@ -188,19 +211,19 @@ function validateField(
 function validateStringRules(
   field: FormField,
   value: string,
-  fail: (message: string) => void,
+  fail: (code: ValidationCode, params?: Record<string, number>) => void,
 ) {
   const rules = field.validation;
   if (!rules) return;
 
   if (rules.minLength !== undefined && value.length < rules.minLength) {
-    fail(`Enter at least ${rules.minLength} characters.`);
+    fail("min_length", { minLength: rules.minLength });
   }
   if (rules.maxLength !== undefined && value.length > rules.maxLength) {
-    fail(`Enter no more than ${rules.maxLength} characters.`);
+    fail("max_length", { maxLength: rules.maxLength });
   }
   if (rules.pattern && !new RegExp(rules.pattern).test(value)) {
-    fail("The value does not match the required format.");
+    fail("pattern");
   }
 }
 

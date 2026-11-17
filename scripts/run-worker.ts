@@ -5,7 +5,7 @@ import {
   ensureBuiltinSchedules,
 } from "../src/modules/jobs/service";
 import {
-  createCoreBackgroundJobHandlers,
+  createConfiguredBackgroundJobHandlers,
   runBackgroundWorkerIteration,
 } from "../src/modules/jobs/worker";
 
@@ -18,8 +18,9 @@ async function main() {
   const workerId =
     process.env.BACKGROUND_WORKER_ID?.trim() ||
     `worker-${randomUUID()}`;
+  // Validates provider configuration before touching the database.
+  const handlers = createConfiguredBackgroundJobHandlers();
   const { client, db } = createDatabase(env.DATABASE_URL);
-  const handlers = createCoreBackgroundJobHandlers();
 
   let stopping = false;
   const stop = () => {

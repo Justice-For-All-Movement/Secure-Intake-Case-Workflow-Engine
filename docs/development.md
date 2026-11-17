@@ -306,7 +306,7 @@ Run the long-lived worker:
 npm run worker
 ```
 
-The bundled worker handles `deadline.sweep` and `review.sweep`. It does not claim external-delivery job types unless a deployment explicitly registers the relevant transport handler.
+The bundled worker handles `deadline.sweep`, `review.sweep`, `retention.sweep` (hourly: expired drafts and old idempotency responses), `webhook.deliver` and `document.scan`. It claims the external-delivery job types `notification.deliver` (email channel) and `correspondence.deliver` (email channel) only when `EMAIL_TRANSPORT_DRIVER=http` is configured (`createConfiguredBackgroundJobHandlers`); an enabled but invalid email configuration stops the worker at start-up.
 
 This is intentional. A missing email/webhook provider should leave those jobs visibly pending rather than falsely converting them into delivery failures.
 

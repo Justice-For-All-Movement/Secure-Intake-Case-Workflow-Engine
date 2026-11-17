@@ -19,12 +19,27 @@ const valid = {
   MALWARE_SCANNER_URL: "https://scanner.example.net/v1/scan",
   MALWARE_SCANNER_PROVIDER: "scanner",
   PROTECTED_DATA_ENCRYPTION_KEY: "a".repeat(32) + "b".repeat(32),
-  WEBHOOK_ENCRYPTION_KEY: "b".repeat(32) + "a".repeat(32)
+  WEBHOOK_ENCRYPTION_KEY: "b".repeat(32) + "a".repeat(32),
+  EMAIL_TRANSPORT_DRIVER: "http",
+  EMAIL_HTTP_URL: "https://mail.example.net/emails",
+  EMAIL_FROM: "Intake <noreply@example.net>"
 };
 const result = inspectProductionEnvironment(valid);
 assert.equal(result.ok, true, JSON.stringify(result));
 assert.deepEqual(result.failed, []);
 assert.deepEqual(result.warnings, []);
+// Email: optional (warning when disabled), validated when enabled.
+assert.deepEqual(inspectProductionEnvironment({ ...valid, EMAIL_TRANSPORT_DRIVER: "none" }).warnings, ["email_delivery_disabled"]);
+assert.deepEqual(inspectProductionEnvironment({ ...valid, EMAIL_TRANSPORT_DRIVER: "smtp" }).failed, ["email_transport_driver"]);
+assert.deepEqual(inspectProductionEnvironment({ ...valid, EMAIL_HTTP_URL: "http://mail.example.net/emails" }).failed, ["https_email_api"]);
+assert.deepEqual(inspectProductionEnvironment({ ...valid, EMAIL_FROM: "not an address" }).failed, ["email_sender_address"]);
+// Scanner: an in-container ClamAV is an alternative to the HTTPS scanner.
+{
+  const { MALWARE_SCANNER_URL, MALWARE_SCANNER_PROVIDER, ...withoutHttpScanner } = valid;
+  assert(MALWARE_SCANNER_URL && MALWARE_SCANNER_PROVIDER);
+  assert.deepEqual(inspectProductionEnvironment({ ...withoutHttpScanner, MALWARE_SCANNER_DRIVER: "clamscan", CLAMSCAN_DATABASE_DIR: "/app/.data/clamav" }).failed, []);
+  assert.deepEqual(inspectProductionEnvironment({ ...withoutHttpScanner, MALWARE_SCANNER_DRIVER: "clamscan" }).failed, ["clamscan_signature_directory"]);
+}
 const missing = inspectProductionEnvironment({});
 assert.equal(missing.ok, false);
 assert(missing.failed.includes("database_tls_connection"));

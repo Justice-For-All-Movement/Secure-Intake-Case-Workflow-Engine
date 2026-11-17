@@ -14,7 +14,8 @@ The optional `deployment/worker.render.example.yaml` is **not auto-applied**. It
 4. Configure a **private** durable S3-compatible bucket; grant only the required object rights. Provide all `DOCUMENT_S3_*` secrets. Files must not be written to ephemeral Render web disks.
 5. Configure an approved HTTPS malware scanner that accepts the engine's scanner contract. Until a scanner and background worker both function, uploads remain quarantined; don't silently mark files clean.
 6. If the application uses protected fields, set a securely generated **64 hexadecimal character** `PROTECTED_DATA_ENCRYPTION_KEY` and preserve it for the life of those records. Webhook integration uses a separate 64-hex `WEBHOOK_ENCRYPTION_KEY`. Store/rotate secrets using provider controls.
-7. Arrange actual TLS, egress restrictions (including metadata/DNS rebinding mitigation), access control, backups, malware-service trust, provider alerts, and incident-response ownership. Never use the engine for classified information without separate accreditation.
+7. To send email, set `EMAIL_TRANSPORT_DRIVER=http` with `EMAIL_HTTP_URL`, `EMAIL_HTTP_TOKEN` and `EMAIL_FROM` (see `docs/PAM_INTEGRATION.md` section 8.1). Without it, email jobs stay pending.
+8. Arrange actual TLS, egress restrictions (including metadata/DNS rebinding mitigation), access control, backups, malware-service trust, provider alerts, and incident-response ownership. Never use the engine for classified information without separate accreditation.
 
 ## Initialize and validate
 
@@ -37,3 +38,13 @@ The Blueprint intentionally leaves the database in Neon and does not purchase Re
 
 The malware scanner URL must not contain a query string or fragment; provide its token through the provider-managed `MALWARE_SCANNER_TOKEN` secret. S3 and scanner redirects fail closed. For slow S3 providers, set `DOCUMENT_S3_TIMEOUT_MS` within 1000 to 300000 ms after measuring the largest supported upload; the default is 120000 ms. A timeout fails the operation and does not promote quarantined content.
 Scanner requests also enforce a 1000 to 300000 ms timeout through `MALWARE_SCANNER_TIMEOUT_MS` (default 120000 ms).
+
+## Live provider verification and restore drill
+
+Once provider secrets exist, add the same names as GitHub repository secrets and run the manual **Live provider verification (opt-in)** workflow (`.github/workflows/live-provider-verification.yml`), or locally `npx tsx scripts/verify-live-providers.ts --require=s3,scanner,email`. It writes, reads back and deletes one random test object under `live-verification/`, checks that a second create-only write is refused, scans the EICAR test string (must be `infected`) and a harmless file (must be `clean`), and sends one email only when `LIVE_EMAIL_TEST_RECIPIENT` is set. Providers without configuration are reported as skipped.
+
+The same workflow's `restore-drill` job runs `scripts/neon-restore-drill.mjs` when `NEON_API_KEY` and `NEON_PROJECT_ID` are set: it creates a temporary Neon branch as of `RESTORE_POINT` (default one hour ago, inside the project's history window), verifies every migration and the core tables on the restored copy, and always deletes the branch. It never writes to the source branch.
+
+## ClamAV inside the container
+
+The image does not bundle ClamAV. Loading the official signature set needs about 1.5 GB of memory, more than the free Render instance offers, and the web process shares that container. Use an HTTPS scanner (`MALWARE_SCANNER_DRIVER=http`), or run the image on an instance with at least 2 GB, add `clamav` to the runner stage and set `MALWARE_SCANNER_DRIVER=clamscan` with `CLAMSCAN_DATABASE_DIR` pointing at a directory that `freshclam` keeps current.

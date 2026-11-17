@@ -1,0 +1,79 @@
+name: Live provider verification (opt-in)
+
+# Manual only. Verifies the real S3 bucket, malware scanner and email API the
+# owner configured as repository secrets. Each provider without secrets is
+# reported as skipped, so the workflow passes when nothing is configured.
+# Sends at most ONE email, and only when LIVE_EMAIL_TEST_RECIPIENT is set.
+on:
+  workflow_dispatch:
+    inputs:
+      require:
+        description: "Providers that must be verified (comma separated: s3,scanner,email); empty = verify what is configured"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DOCUMENT_S3_ENDPOINT: ${{ secrets.DOCUMENT_S3_ENDPOINT }}
+      DOCUMENT_S3_REGION: ${{ secrets.DOCUMENT_S3_REGION }}
+      DOCUMENT_S3_BUCKET: ${{ secrets.DOCUMENT_S3_BUCKET }}
+      DOCUMENT_S3_ACCESS_KEY_ID: ${{ secrets.DOCUMENT_S3_ACCESS_KEY_ID }}
+      DOCUMENT_S3_SECRET_ACCESS_KEY: ${{ secrets.DOCUMENT_S3_SECRET_ACCESS_KEY }}
+      MALWARE_SCANNER_DRIVER: ${{ secrets.MALWARE_SCANNER_DRIVER }}
+      MALWARE_SCANNER_URL: ${{ secrets.MALWARE_SCANNER_URL }}
+      MALWARE_SCANNER_PROVIDER: ${{ secrets.MALWARE_SCANNER_PROVIDER }}
+      MALWARE_SCANNER_TOKEN: ${{ secrets.MALWARE_SCANNER_TOKEN }}
+      EMAIL_TRANSPORT_DRIVER: ${{ secrets.EMAIL_TRANSPORT_DRIVER }}
+      EMAIL_HTTP_URL: ${{ secrets.EMAIL_HTTP_URL }}
+      EMAIL_HTTP_TOKEN: ${{ secrets.EMAIL_HTTP_TOKEN }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
+      LIVE_EMAIL_TEST_RECIPIENT: ${{ secrets.LIVE_EMAIL_TEST_RECIPIENT }}
+      REQUIRE: ${{ inputs.require }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Install ClamAV with the official signatures (only for MALWARE_SCANNER_DRIVER=clamscan)
+        if: env.MALWARE_SCANNER_DRIVER == 'clamscan'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clamav clamav-freshclam
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam --quiet
+          echo "CLAMSCAN_DATABASE_DIR=/var/lib/clamav" >> "$GITHUB_ENV"
+      - name: Verify configured providers
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$REQUIRE" | grep -Eq '^([a-z0-9]+(,[a-z0-9]+)*)?$'; then
+            echo "Invalid require input." >&2
+            exit 2
+          fi
+          npx tsx scripts/verify-live-providers.ts ${REQUIRE:+--require=$REQUIRE} | tee -a "$GITHUB_STEP_SUMMARY"
+
+  restore-drill:
+    # Neon point-in-time restore drill: temporary branch as of RESTORE_POINT,
+    # schema/table checks, branch always deleted. Skips without NEON_* secrets.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+      NEON_SOURCE_BRANCH_ID: ${{ secrets.NEON_SOURCE_BRANCH_ID }}
+      NEON_DATABASE_NAME: ${{ secrets.NEON_DATABASE_NAME }}
+      NEON_ROLE_NAME: ${{ secrets.NEON_ROLE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node scripts/neon-restore-drill.mjs | tee -a "$GITHUB_STEP_SUMMARY"

@@ -49,6 +49,7 @@ const schema = z.object({
   BACKGROUND_JOB_BATCH_SIZE: z.coerce.number().int().positive().max(100).default(10),
   BACKGROUND_DEADLINE_SWEEP_SECONDS: z.coerce.number().int().positive().default(60),
   API_DEFAULT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().max(10000).default(120),
+  PUBLIC_DRAFT_CREATE_LIMIT_PER_HOUR: z.coerce.number().int().min(1).max(10000).default(30),
   WEBHOOK_ENCRYPTION_KEY: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
   PROTECTED_DATA_ENCRYPTION_KEY: z
     .string()
@@ -76,6 +77,8 @@ export const env = schema.parse({
     process.env.BACKGROUND_DEADLINE_SWEEP_SECONDS,
   API_DEFAULT_RATE_LIMIT_PER_MINUTE:
     process.env.API_DEFAULT_RATE_LIMIT_PER_MINUTE,
+  PUBLIC_DRAFT_CREATE_LIMIT_PER_HOUR:
+    process.env.PUBLIC_DRAFT_CREATE_LIMIT_PER_HOUR || undefined,
   WEBHOOK_ENCRYPTION_KEY:
     process.env.WEBHOOK_ENCRYPTION_KEY || undefined,
   PROTECTED_DATA_ENCRYPTION_KEY:

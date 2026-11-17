@@ -19,7 +19,7 @@ concurrency:
 jobs:
   health:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,5 +33,7 @@ jobs:
           set -euo pipefail
           echo "## Existing Secure Intake preview: read-only health check" >> "$GITHUB_STEP_SUMMARY"
           echo "This checks the existing Render URL and does not deploy or modify it." >> "$GITHUB_STEP_SUMMARY"
+          # The free Render instance sleeps when idle; wake it (bounded) before the strict probe.
+          PROBE_WAKE_ATTEMPTS=4 \
           EXPECTED_ENGINE_VERSION="$(node -p "require('./package.json').version")" \
             node scripts/probe-public.mjs https://intake-pam.onrender.com | tee -a "$GITHUB_STEP_SUMMARY"

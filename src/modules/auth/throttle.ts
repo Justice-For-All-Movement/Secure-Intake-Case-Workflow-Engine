@@ -17,7 +17,7 @@ export function normalizeLoginIdentifier(value: string) {
 }
 
 export function loginBucketHash(
-  kind: "account" | "source" | "participant",
+  kind: "account" | "source" | "participant" | "draft",
   value: string,
 ) {
   return createHash("sha256")
@@ -81,22 +81,33 @@ export async function assertLoginAllowed(
   }
 }
 
+export interface ThrottleLimits {
+  limit: number;
+  windowMinutes: number;
+  blockMinutes: number;
+}
+
 export async function recordLoginFailure(
   db: Database,
   keys: readonly string[],
   now = new Date(),
+  limits: ThrottleLimits = {
+    limit: env.AUTH_LOGIN_FAILURE_LIMIT,
+    windowMinutes: env.AUTH_LOGIN_WINDOW_MINUTES,
+    blockMinutes: env.AUTH_LOGIN_BLOCK_MINUTES,
+  },
 ) {
   const cutoff = new Date(
-    now.getTime() - env.AUTH_LOGIN_WINDOW_MINUTES * 60_000,
+    now.getTime() - limits.windowMinutes * 60_000,
   );
   const blockedUntil = new Date(
-    now.getTime() + env.AUTH_LOGIN_BLOCK_MINUTES * 60_000,
+    now.getTime() + limits.blockMinutes * 60_000,
   );
 
   const staleBefore = new Date(
     now.getTime() -
-      (env.AUTH_LOGIN_WINDOW_MINUTES +
-        env.AUTH_LOGIN_BLOCK_MINUTES) *
+      (Math.max(env.AUTH_LOGIN_WINDOW_MINUTES, limits.windowMinutes) +
+        Math.max(env.AUTH_LOGIN_BLOCK_MINUTES, limits.blockMinutes)) *
         60_000 *
         2,
   );
@@ -126,7 +137,7 @@ export async function recordLoginFailure(
           windowStartedAt: now,
           failureCount: 1,
           blockedUntil:
-            env.AUTH_LOGIN_FAILURE_LIMIT <= 1
+            limits.limit <= 1
               ? blockedUntil
               : null,
           updatedAt: now,
@@ -151,7 +162,7 @@ export async function recordLoginFailure(
           failureCount,
           blockedUntil: existingBlockStillActive
             ? current.blockedUntil
-            : failureCount >= env.AUTH_LOGIN_FAILURE_LIMIT
+            : failureCount >= limits.limit
               ? blockedUntil
               : null,
           updatedAt: now,
