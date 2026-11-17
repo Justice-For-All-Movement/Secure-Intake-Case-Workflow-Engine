@@ -5,6 +5,18 @@ import { sweepOrganizationDeadlines } from "@/modules/deadlines/service";
 import { scanDocumentVersionJob } from "@/modules/documents/scan-job";
 import { sweepReviewDeadlines } from "@/modules/reviews/service";
 import { deliverWebhookJob } from "@/modules/webhooks/worker";
+import { createCorrespondenceDeliveryJobHandler } from "@/modules/communications/jobs";
+import {
+  createEmailCommunicationTransport,
+  createEmailNotificationTransport,
+  emailConfigFromEnvironment,
+  HttpEmailSender,
+} from "@/modules/email/http-email";
+import { createNotificationDeliveryJobHandler } from "@/modules/notifications/jobs";
+import {
+  retentionPolicyFromEnvironment,
+  sweepExpiredRecords,
+} from "@/modules/retention/service";
 import {
   claimBackgroundJobs,
   completeBackgroundJob,
@@ -47,9 +59,50 @@ export function createCoreBackgroundJobHandlers(): Map<
         await sweepReviewDeadlines(db, scope);
       },
     ],
+    [
+      "retention.sweep",
+      async ({ db, scope }) => {
+        await sweepExpiredRecords(
+          db,
+          scope,
+          retentionPolicyFromEnvironment(),
+        );
+      },
+    ],
     ["webhook.deliver", deliverWebhookJob],
     ["document.scan", scanDocumentVersionJob],
   ]);
+}
+
+/**
+ * Core handlers plus the external-delivery handlers whose provider the
+ * deployment configured. Without `EMAIL_TRANSPORT_DRIVER=http` the worker
+ * does not claim `notification.deliver` or `correspondence.deliver`, so those
+ * jobs stay visibly pending instead of being failed for a missing provider.
+ * An enabled but invalid email configuration throws at start-up.
+ */
+export function createConfiguredBackgroundJobHandlers(
+  source: Record<string, string | undefined> = process.env,
+  fetcher: typeof fetch = fetch,
+): Map<string, BackgroundJobHandler> {
+  const handlers = createCoreBackgroundJobHandlers();
+  const emailConfig = emailConfigFromEnvironment(source);
+  if (emailConfig) {
+    const sender = new HttpEmailSender(emailConfig, fetcher);
+    const notificationTransport = createEmailNotificationTransport(sender);
+    const communicationTransport = createEmailCommunicationTransport(sender);
+    handlers.set(
+      "notification.deliver",
+      createNotificationDeliveryJobHandler((channel) =>
+        channel === "email" ? notificationTransport : null,
+      ),
+    );
+    handlers.set(
+      "correspondence.deliver",
+      createCorrespondenceDeliveryJobHandler(() => communicationTransport),
+    );
+  }
+  return handlers;
 }
 
 export async function runBackgroundWorkerIteration(

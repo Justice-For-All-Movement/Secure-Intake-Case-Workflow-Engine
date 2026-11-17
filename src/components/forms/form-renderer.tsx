@@ -19,6 +19,7 @@ import { visibleFieldIdsForDefinition } from "@/modules/forms/visibility";
 import {
   defaultFormUiStrings,
   type FormUiStrings,
+  validationMessage,
 } from "@/modules/forms/form-ui-strings";
 
 export function FormRenderer({
@@ -53,14 +54,10 @@ export function FormRenderer({
     definition,
     answers,
   );
-  const translateError = (message: string) =>
-    message === defaultFormUiStrings.validationRequired
-      ? ui.validationRequired
-      : message;
   const errorsByField = new Map(
     state.errors.map((error) => [
       error.fieldId,
-      translateError(error.message),
+      validationMessage(error, ui),
     ]),
   );
 
@@ -78,7 +75,10 @@ export function FormRenderer({
       setDraftCode(state.resumeCode ?? "");
       draftNoticeRef.current?.focus();
     }
-    if (state.status === "draft_not_found") {
+    if (
+      state.status === "draft_not_found" ||
+      state.status === "draft_rate_limited"
+    ) {
       draftNoticeRef.current?.focus();
     }
   }, [state]);
@@ -153,7 +153,10 @@ export function FormRenderer({
         role="status"
         aria-live="polite"
         className={
-          state.status === "draft_not_found" ? "error-summary" : undefined
+          state.status === "draft_not_found" ||
+          state.status === "draft_rate_limited"
+            ? "error-summary"
+            : undefined
         }
       >
         {state.status === "draft_saved" ? (
@@ -170,6 +173,9 @@ export function FormRenderer({
         {state.status === "draft_loaded" ? <p>{ui.resumeLoaded}</p> : null}
         {state.status === "draft_not_found" ? (
           <p>{ui.resumeFailed}</p>
+        ) : null}
+        {state.status === "draft_rate_limited" ? (
+          <p>{ui.draftRateLimited}</p>
         ) : null}
       </div>
 
@@ -198,7 +204,7 @@ export function FormRenderer({
             {state.errors.map((error, index) => (
               <li key={`${error.fieldId}-${index}`}>
                 <a href={`#field-${error.fieldId}`}>
-                  {translateError(error.message)}
+                  {validationMessage(error, ui)}
                 </a>
               </li>
             ))}

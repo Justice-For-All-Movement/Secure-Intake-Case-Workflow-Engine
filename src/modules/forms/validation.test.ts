@@ -95,6 +95,7 @@ describe("submission validation", () => {
     if (!result.success) {
       expect(result.errors).toContainEqual({
         fieldId: "urgent_reason",
+        code: "required",
         message: "This field is required.",
       });
     }

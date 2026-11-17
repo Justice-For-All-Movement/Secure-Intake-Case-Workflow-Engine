@@ -538,7 +538,17 @@ export async function ensureBuiltinSchedules(
         jobType: "review.sweep",
         priority: 20,
       },
+      {
+        // Expired drafts and stored idempotency responses: hourly is plenty.
+        key: "retention-sweep",
+        jobType: "retention.sweep",
+        priority: 80,
+        intervalSeconds: Math.max(intervalSeconds, 3600),
+      },
     ] as const) {
+      const scheduleInterval: number =
+        ("intervalSeconds" in schedule ? schedule.intervalSeconds : undefined) ??
+        intervalSeconds;
       await db
         .insert(backgroundSchedules)
         .values({
@@ -546,7 +556,7 @@ export async function ensureBuiltinSchedules(
           key: schedule.key,
           jobType: schedule.jobType,
           payload: {},
-          intervalSeconds,
+          intervalSeconds: scheduleInterval,
           priority: schedule.priority,
           maxAttempts: 5,
           nextRunAt: now,
@@ -557,7 +567,7 @@ export async function ensureBuiltinSchedules(
             backgroundSchedules.key,
           ],
           set: {
-            intervalSeconds,
+            intervalSeconds: scheduleInterval,
             updatedAt: now,
           },
         });

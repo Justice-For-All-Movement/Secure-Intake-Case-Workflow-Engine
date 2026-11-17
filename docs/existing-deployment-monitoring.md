@@ -8,6 +8,8 @@ The dedicated Neon project is named **Secure Intake Case Workflow Engine**. It i
 
 `.github/workflows/existing-preview-health.yml` runs a read-only check of the existing preview every 15 minutes (GitHub scheduling is best-effort), on pushes to `main`, and by manual dispatch. No Render or Neon access token is required for the check. The endpoints are public and return only coarse information.
 
+The free instance sleeps when idle and its first request waits for a cold start. The probe therefore first wakes the service with up to four bounded liveness requests (`PROBE_WAKE_ATTEMPTS`; only timeouts, connection errors and HTTP 502/503/504 are retried), then runs the strict checks.
+
 The check verifies:
 - HTTPS liveness at `/api/health`;
 - HTTPS PostgreSQL readiness at `/api/ready`;

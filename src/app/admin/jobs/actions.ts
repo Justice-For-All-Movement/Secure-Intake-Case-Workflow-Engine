@@ -15,7 +15,7 @@ import {
   setBackgroundScheduleStatus,
 } from "@/modules/jobs/service";
 import {
-  createCoreBackgroundJobHandlers,
+  createConfiguredBackgroundJobHandlers,
   runBackgroundWorkerIteration,
 } from "@/modules/jobs/worker";
 
@@ -44,7 +44,7 @@ export async function runCoreJobsOnceAction() {
   const context = await requireJobManager();
   const result = await runBackgroundWorkerIteration(
     getRuntimeDatabase(),
-    createCoreBackgroundJobHandlers(),
+    createConfiguredBackgroundJobHandlers(),
     {
       workerId: `admin-${context.user.id}-${randomUUID()}`,
       batchSize: env.BACKGROUND_JOB_BATCH_SIZE,

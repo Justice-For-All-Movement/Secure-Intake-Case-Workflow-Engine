@@ -45,8 +45,25 @@ export function inspectProductionEnvironment(env) {
   requireCheck("s3_bucket", safeSecret(env.DOCUMENT_S3_BUCKET));
   requireCheck("s3_access_key_id", safeSecret(env.DOCUMENT_S3_ACCESS_KEY_ID));
   requireCheck("s3_secret_access_key", safeSecret(env.DOCUMENT_S3_SECRET_ACCESS_KEY));
-  requireCheck("https_malware_scanner", httpsEndpoint(env.MALWARE_SCANNER_URL));
-  requireCheck("malware_scanner_provider", safeSecret(env.MALWARE_SCANNER_PROVIDER));
+  const scannerDriver = String(env.MALWARE_SCANNER_DRIVER ?? "").trim().toLowerCase();
+  if (scannerDriver === "clamscan") {
+    // Local ClamAV inside the container: needs an absolute signature directory.
+    requireCheck("clamscan_signature_directory",
+      typeof env.CLAMSCAN_DATABASE_DIR === "string" && /^\/[^\0]*$/.test(env.CLAMSCAN_DATABASE_DIR.trim()));
+  } else {
+    requireCheck("https_malware_scanner", httpsEndpoint(env.MALWARE_SCANNER_URL));
+    requireCheck("malware_scanner_provider", safeSecret(env.MALWARE_SCANNER_PROVIDER));
+  }
+  const emailDriver = String(env.EMAIL_TRANSPORT_DRIVER ?? "").trim().toLowerCase();
+  if (emailDriver === "http") {
+    requireCheck("https_email_api", httpsEndpoint(env.EMAIL_HTTP_URL));
+    requireCheck("email_sender_address", typeof env.EMAIL_FROM === "string" &&
+      /^(?:[^<>\r\n]{1,200}<[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+>|[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+)$/.test(env.EMAIL_FROM.trim()));
+  } else if (emailDriver === "" || emailDriver === "none") {
+    warnings.push("email_delivery_disabled");
+  } else {
+    failed.push("email_transport_driver");
+  }
   if (env.PROTECTED_DATA_ENCRYPTION_KEY) {
     requireCheck("protected_data_encryption_key_format", encryptionKey(env.PROTECTED_DATA_ENCRYPTION_KEY));
   } else {

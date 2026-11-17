@@ -1,6 +1,15 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { env } from "@/lib/env";
+import {
+  assertLoginAllowed,
+  LoginRateLimitError,
+  loginBucketHash,
+  recordLoginFailure,
+  trustedLoginSource,
+} from "@/modules/auth/throttle";
 import { getRuntimeDatabase } from "@/db/runtime";
 import { createTrustedTenantScope } from "@/lib/tenancy";
 import { answersFromFormData } from "@/modules/forms/form-data";
@@ -81,6 +90,21 @@ export async function submitPublicFormAction(
           // Fall through: the earlier draft is gone, start a new one.
         }
       }
+      // New drafts are counted per trusted client source (only when the
+      // deployment trusts its proxy's forwarding headers). Updates of an
+      // existing draft are not counted.
+      const source = trustedLoginSource(await headers());
+      const draftKey = source ? loginBucketHash("draft", source) : null;
+      if (draftKey) {
+        try {
+          await assertLoginAllowed(db, [draftKey]);
+        } catch (error) {
+          if (error instanceof LoginRateLimitError) {
+            return { status: "draft_rate_limited", errors: [] };
+          }
+          throw error;
+        }
+      }
       const draft = await createPublicDraftSubmission(
         db,
         organizationSlug,
@@ -88,6 +112,13 @@ export async function submitPublicFormAction(
         answers,
         { locale },
       );
+      if (draftKey) {
+        await recordLoginFailure(db, [draftKey], new Date(), {
+          limit: env.PUBLIC_DRAFT_CREATE_LIMIT_PER_HOUR,
+          windowMinutes: 60,
+          blockMinutes: 60,
+        });
+      }
       return {
         status: "draft_saved",
         errors: [],

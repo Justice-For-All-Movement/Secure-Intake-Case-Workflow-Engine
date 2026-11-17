@@ -44,13 +44,56 @@ export async function probePublicService(baseUrl, fetcher = fetch, expectedVersi
   if (results[0].version !== results[1].version) throw new Error("Version mismatch between health and readiness.");
   return { origin, checks: results, status: "smoke_verified", checkedAt: new Date().toISOString() };
 }
+/**
+ * A free hosting tier may stop an idle service; the first request then waits
+ * for a cold start that can exceed one request timeout. Wake the service with
+ * bounded liveness requests before the strict probe. Only transport failures
+ * (timeouts, resets) and gateway statuses 502/503/504 are retried; any other
+ * answer ends the wake phase and the strict probe judges it. A service that is
+ * still not answering after every attempt is reported as unreachable.
+ */
+export async function wakePublicService(baseUrl, fetcher = fetch, options = {}) {
+  const origin = canonicalBaseUrl(baseUrl);
+  const attempts = options.attempts ?? 4;
+  const timeoutMs = options.timeoutMs ?? 45000;
+  const delayMs = options.delayMs ?? 15000;
+  const sleep = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 10) {
+    throw new Error("Wake attempts must be between 1 and 10.");
+  }
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
+    throw new Error("Smoke-check timeout must be between 1000 and 60000 milliseconds.");
+  }
+  if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 60000) {
+    throw new Error("Wake delay must be between 0 and 60000 milliseconds.");
+  }
+  let last = "no response";
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetcher(origin + "/api/health", {
+        method: "GET", redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(timeoutMs)
+      });
+      await response.body?.cancel().catch(() => {});
+      if (![502, 503, 504].includes(response.status)) return { origin, attempts: attempt };
+      last = "HTTP " + response.status;
+    } catch (error) {
+      // Report only the category: never echo upstream bodies or local details.
+      last = error instanceof Error && error.name === "TimeoutError" ? "timeout" : "transport error";
+    }
+    if (attempt < attempts) await sleep(delayMs);
+  }
+  throw new Error("Service did not answer after " + attempts + " wake attempts (" + last + ").");
+}
+
 if (process.argv[1] && import.meta.url === new URL("file://" + process.argv[1]).href) {
   const baseUrl = process.argv[2];
   if (!baseUrl) {
     console.error("Usage: node scripts/probe-public.mjs https://YOUR-AUTHORIZED-SERVICE");
     process.exitCode = 2;
   } else {
-    probePublicService(baseUrl, fetch, process.env.EXPECTED_ENGINE_VERSION || undefined).then(result => console.log(JSON.stringify(result))).catch(error => {
+    const wakeAttempts = Number(process.env.PROBE_WAKE_ATTEMPTS || "1");
+    wakePublicService(baseUrl, fetch, { attempts: wakeAttempts })
+      .then(() => probePublicService(baseUrl, fetch, process.env.EXPECTED_ENGINE_VERSION || undefined)).then(result => console.log(JSON.stringify(result))).catch(error => {
       console.error("Smoke check failed: " + (error instanceof Error ? error.message : "unknown error"));
       process.exitCode = 1;
     });

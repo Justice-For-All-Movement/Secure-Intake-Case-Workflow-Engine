@@ -47,6 +47,25 @@ export const defaultFormUiStrings = {
   addressPostalCode: "Postal code",
   addressCountry: "Country",
   validationRequired: "This field is required.",
+  validationText: "Enter a text value.",
+  validationDate: "Enter a valid date.",
+  validationEmail: "Enter a valid email address.",
+  validationNumber: "Enter a valid number.",
+  validationMin: "Value must be at least {min}.",
+  validationMax: "Value must be no more than {max}.",
+  validationBoolean: "Choose yes or no.",
+  validationAttestation: "You must affirm this statement to continue.",
+  validationOption: "Choose a valid option.",
+  validationOptions: "Choose valid options.",
+  validationAddress: "Enter a valid address.",
+  validationAddressIncomplete: "Complete all required address fields.",
+  validationAttachments: "Attachment references are invalid.",
+  validationMaxFiles: "Attach no more than {maxFiles} files.",
+  validationMinLength: "Enter at least {minLength} characters.",
+  validationMaxLength: "Enter no more than {maxLength} characters.",
+  validationPattern: "The value does not match the required format.",
+  draftRateLimited:
+    "Too many drafts were started from this connection. Try again later.",
 } as const;
 
 export type FormUiStringKey = keyof typeof defaultFormUiStrings;
@@ -61,3 +80,49 @@ export function resolveFormUiStrings(
   }
   return result as FormUiStrings;
 }
+
+/** Stable, language-neutral validation codes and their UI string keys. */
+export const validationMessageKeys = {
+  required: "validationRequired",
+  text: "validationText",
+  date: "validationDate",
+  email: "validationEmail",
+  number: "validationNumber",
+  min: "validationMin",
+  max: "validationMax",
+  boolean: "validationBoolean",
+  attestation: "validationAttestation",
+  option: "validationOption",
+  options: "validationOptions",
+  address: "validationAddress",
+  address_incomplete: "validationAddressIncomplete",
+  attachments: "validationAttachments",
+  max_files: "validationMaxFiles",
+  min_length: "validationMinLength",
+  max_length: "validationMaxLength",
+  pattern: "validationPattern",
+} as const satisfies Record<string, FormUiStringKey>;
+
+export type ValidationCode = keyof typeof validationMessageKeys;
+
+/**
+ * Renders a validation error in the participant's language: the locale's
+ * `translations.<locale>.ui.validation*` string when present, else English.
+ * `{name}` placeholders are replaced with the error's numeric parameters.
+ */
+export function validationMessage(
+  error: { code?: string; params?: Record<string, number>; message: string },
+  strings: Record<FormUiStringKey, string> = defaultFormUiStrings,
+): string {
+  if (!error.code || !Object.hasOwn(validationMessageKeys, error.code)) {
+    return error.message;
+  }
+  const template = strings[validationMessageKeys[error.code as ValidationCode]];
+  return template.replace(/\{([a-zA-Z]+)\}/g, (whole, name: string) => {
+    const value = error.params?.[name];
+    return typeof value === "number" && Number.isFinite(value)
+      ? String(value)
+      : whole;
+  });
+}
+

@@ -68,6 +68,11 @@ npm run app:manifest -- --file examples/reporting-manifest.example.json \
 | `MALWARE_SCANNER_URL`, `MALWARE_SCANNER_PROVIDER`, `MALWARE_SCANNER_TOKEN`, `MALWARE_SCANNER_TIMEOUT_MS` | http driver | HTTPS scanner endpoint. |
 | `DOCUMENT_STORAGE_DRIVER`, `DOCUMENT_STORAGE_ROOT`, `DOCUMENT_MAX_BYTES`, `PUBLIC_UPLOAD_TOTAL_MAX_BYTES`, `DOCUMENT_S3_*` | no | Upload storage (local directory by default; web and worker must share it). |
 | `API_DEFAULT_RATE_LIMIT_PER_MINUTE` | no (120) | Default per-credential rate limit. |
+| `EMAIL_TRANSPORT_DRIVER` | to send email | `http` or `none` (default). With `none` the worker does not claim `notification.deliver` / `correspondence.deliver`; those jobs stay pending. |
+| `EMAIL_HTTP_URL`, `EMAIL_HTTP_TOKEN`, `EMAIL_FROM`, `EMAIL_PROVIDER`, `EMAIL_HTTP_TIMEOUT_MS` | http email driver | HTTPS JSON email API (see 8.1), bearer token, sender (`addr` or `Name <addr>`), provider label, timeout (1000-300000 ms, default 30000). |
+| `DRAFT_RETENTION_DAYS` | no (30) | Unsubmitted drafts untouched this long are deleted by the hourly `retention.sweep` job (1-3650). |
+| `API_IDEMPOTENCY_RETENTION_HOURS` | no (168) | Stored idempotency responses older than this are deleted by the same job (24-8760). A key reused after that creates a new resource. |
+| `PUBLIC_DRAFT_CREATE_LIMIT_PER_HOUR` | no (30) | New public drafts per client source per hour; counted only when `AUTH_TRUST_PROXY_HEADERS=true` (behind a proxy that overwrites `X-Forwarded-For`). |
 | `BACKGROUND_JOB_*`, `BACKGROUND_DEADLINE_SWEEP_SECONDS` | no | Worker tuning. |
 | `AUTH_*`, `PARTICIPANT_SESSION_*` | no | Staff and participant session settings. |
 
@@ -124,6 +129,15 @@ credentials and register webhooks. It cannot read any tenant data.
   `participant_messaging_unavailable` 409, `assignment_failed` 409,
   `validation_failed` 422, `transition_guard_failed` 422, `invalid_request` 422,
   `protected_data_unavailable` 503, `operation_failed` 400 (unclassified).
+- `validation_failed` details are `[{"fieldId","code","params"?,"message"}]`.
+  `message` is English; `code` is language neutral (`required`, `text`,
+  `date`, `email`, `number`, `min`, `max`, `boolean`, `attestation`, `option`,
+  `options`, `address`, `address_incomplete`, `attachments`, `max_files`,
+  `min_length`, `max_length`, `pattern`) and `params` carries the numbers
+  (`min`, `max`, `minLength`, `maxLength`, `maxFiles`). The public form shows
+  each code in the participant's language from the form's
+  `translations.<locale>.ui.validation*` strings (for example
+  `"validationMinLength": "Escriba al menos {minLength} caracteres."`).
 - A resource of another tenant is always `404`, never `403`.
 - **Idempotency**: every `POST` under section 4 that uses the JSON envelope
   accepts `Idempotency-Key: <8-200 chars>`. Same key + same method, path and
@@ -680,6 +694,28 @@ copy (`--database=$CLAMSCAN_DATABASE_DIR`; exit 0 clean, 1 infected, other =
 failed — including a missing or empty signature database). `http` posts the
 bytes to `MALWARE_SCANNER_URL` and expects `{"status":"clean|infected|failed"}`.
 
+### 8.1 Outbound email
+
+With `EMAIL_TRANSPORT_DRIVER=http` the worker delivers email notifications
+(`notification.deliver`, email channel) and outbound email correspondence
+(`correspondence.deliver`) by one HTTPS request per message:
+
+```
+POST {EMAIL_HTTP_URL}
+Authorization: Bearer {EMAIL_HTTP_TOKEN}
+Idempotency-Key: notification-<deliveryId> | correspondence-<messageId>
+{"from":"{EMAIL_FROM}","to":["..."],"cc":[...],"bcc":[...],"subject":"...","text":"...","reply_to":"..."}
+```
+
+Any 2xx is success (a JSON `id` is stored as the provider message id);
+anything else, a redirect or a timeout is a failed attempt (retried, up to 5).
+Provider response bodies are never stored. The shape matches common
+transactional email APIs (for example Resend `POST https://api.resend.com/emails`);
+another provider needs a small relay. Correspondence with attachments is
+refused rather than sent without them. A notification on the `webhook`
+channel has no transport and fails visibly once email is enabled. Letter,
+portal and manual correspondence are recorded by staff, not sent.
+
 ## 9. Participant surfaces
 
 | URL | Purpose |
@@ -691,7 +727,10 @@ bytes to `MALWARE_SCANNER_URL` and expects `{"status":"clean|infected|failed"}`.
 - **Drafts**: saving returns a resume code (256-bit, shown once, only its hash
   is stored). Opening a draft with an unknown, used, malformed or other-form
   code gives one identical answer. Files and protected answers are not kept in
-  drafts and are not returned on resume.
+  drafts and are not returned on resume. Drafts untouched for
+  `DRAFT_RETENTION_DAYS` (default 30) are deleted; new drafts per client
+  source are limited by `PUBLIC_DRAFT_CREATE_LIMIT_PER_HOUR` when the
+  deployment trusts its proxy headers.
 - **Recovery**: the tracking code plus access secret is the only way back in.
   Sign-in failures are identical whether or not the tracking code exists, use
   a constant-time comparison against a dummy hash and are throttled per code
@@ -705,20 +744,24 @@ bytes to `MALWARE_SCANNER_URL` and expects `{"status":"clean|infected|failed"}`.
 
 ## 10. Not implemented / not verified
 
+Deliberate boundaries of the engine (not planned work):
+
 - No binary upload through the service API (`POST /submissions` is answers
   only); files enter through the public form or the staff UI.
 - Participant messages carry no attachments.
 - Protected compartments cover structured fields, not files.
-- Server-side validation messages other than "required" are English only.
 - Filing/deciding reviews and creating teams/queues ad hoc have no service
   endpoint (use the manifest or the staff UI).
-- Drafts and stored idempotency keys have no automatic expiry job; public
-  draft creation is not rate limited beyond the deployment's edge controls.
-- CI steps that install ClamAV and a browser for `npm run test:pg` were added
-  but have not run on the hosted CI yet.
-- Webhook delivery to a public HTTPS receiver and the HTTP malware-scanner
-  adapter are implemented but were not exercised against a live third party;
-  S3 storage likewise. ClamAV was exercised with a locally created signature
-  database, not the official signature set.
-- The identity service's HTTPS-only verifier was not run against this app over
-  TLS; the capability document it reads is covered by tests.
+- The email transport sends plain text without attachments.
+
+Verified only with local fakes, pending the owner's provider credentials
+(run the manual "Live provider verification" workflow once they exist):
+
+- S3 storage (create-only PUT, read-back, delete) against a real provider.
+- The HTTP malware-scanner adapter, and ClamAV with the official signature
+  set (CI uses a locally created signature).
+- The HTTP email API against a real provider.
+- Webhook delivery to a public HTTPS receiver.
+- Neon point-in-time restore (`scripts/neon-restore-drill.mjs`).
+- The identity service's HTTPS-only verifier against this app over TLS; the
+  capability document it reads is covered by tests.
