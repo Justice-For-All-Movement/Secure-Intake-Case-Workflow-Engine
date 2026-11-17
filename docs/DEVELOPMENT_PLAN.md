@@ -198,6 +198,30 @@ See [the source-bound reconciliation](ENGINE_ROOM_RECONCILIATION_20261018.md) fo
 4. Continue implementation in small chained PRs with required tests, migrations, review of security implications and rollback plan; stop when permissions, credentials, external provider/legal requirements or failing gates make it necessary. Consult the user only for material product and real credentials/authorization decisions.
 5. Require real environment health/readiness, DB migrations, backup restoration, media/document storage and malware scanning where applicable, accessibility/security review and demonstrated end-to-end consumer flows before calling a production release complete.
 
+## Completion status — 17 November 2026
+
+All 42 plan units have merged source work on `main`; the canonical status is
+`registry/prs.json` and the evidence table is
+[ACCEPTANCE_LEDGER.md](ACCEPTANCE_LEDGER.md).
+
+- Complete: SI-01–SI-36, SI-38 (independent expert review deferred by owner
+  policy), SI-41.
+- Complete pending owner credentials: SI-37 (S3 bucket, malware scanner,
+  Neon restore drill), SI-39 (email provider), SI-40 (live synthetic
+  acceptance after providers exist).
+- Complete pending owner decision: SI-42 (cutting the stable 1.0.0 release
+  together with the downstream verifier's `supportedVersions`).
+
+Owner-only inputs (names only; values go to the Render service environment
+and GitHub repository secrets): `DOCUMENT_STORAGE_DRIVER`,
+`DOCUMENT_S3_ENDPOINT`, `DOCUMENT_S3_REGION`, `DOCUMENT_S3_BUCKET`,
+`DOCUMENT_S3_ACCESS_KEY_ID`, `DOCUMENT_S3_SECRET_ACCESS_KEY`,
+`MALWARE_SCANNER_DRIVER`, `MALWARE_SCANNER_URL`, `MALWARE_SCANNER_PROVIDER`,
+`MALWARE_SCANNER_TOKEN`, `EMAIL_TRANSPORT_DRIVER`, `EMAIL_HTTP_URL`,
+`EMAIL_HTTP_TOKEN`, `EMAIL_FROM`, optionally `AUTH_TRUST_PROXY_HEADERS`, and for the
+verification workflow `LIVE_EMAIL_TEST_RECIPIENT`, `NEON_API_KEY`,
+`NEON_PROJECT_ID`. The ledger lists the steps.
+
 ## Recovery confidence
 
 **The original 20 ordered milestones are recovered** and supported by the previous conversation and current repository docs. Current code/CI/live deployment evidence is not established by creating this document.
