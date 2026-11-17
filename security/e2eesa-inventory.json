@@ -1,18 +1,186 @@
 {
   "schemaVersion": 1,
   "repository": "neophilism/Secure-Intake-Case-Workflow-Engine",
-  "classificationStatus": "unverified",
+  "classificationStatus": "ai-reviewed",
   "coverageComplete": false,
-  "components": [],
-  "dataFlows": [],
+  "components": [
+    {
+      "id": "web-app",
+      "kind": "server",
+      "description": "Next.js web application: public forms, participant portal, staff UI, /api/v1 service API",
+      "source": "src/app"
+    },
+    {
+      "id": "worker",
+      "kind": "server",
+      "description": "Background worker: scans, webhooks, email, deadline/review/retention sweeps",
+      "source": "scripts/run-worker.ts"
+    },
+    {
+      "id": "postgresql",
+      "kind": "datastore",
+      "description": "Neon PostgreSQL: all records, audit log, job ledger",
+      "source": "src/db/schema.ts"
+    },
+    {
+      "id": "document-store",
+      "kind": "datastore",
+      "description": "Local directory (development) or S3-compatible bucket for document versions",
+      "source": "src/modules/documents/storage.ts"
+    },
+    {
+      "id": "malware-scanner",
+      "kind": "third-party",
+      "description": "clamscan binary or HTTPS scanner service",
+      "source": "src/modules/documents/scanner.ts"
+    },
+    {
+      "id": "email-api",
+      "kind": "third-party",
+      "description": "HTTPS JSON email provider (optional)",
+      "source": "src/modules/email/http-email.ts"
+    },
+    {
+      "id": "webhook-receivers",
+      "kind": "third-party",
+      "description": "Downstream applications receiving signed events",
+      "source": "src/modules/webhooks"
+    },
+    {
+      "id": "downstream-api-clients",
+      "kind": "client",
+      "description": "Tenant-scoped service credentials (e.g. a downstream application)",
+      "source": "src/modules/integration"
+    },
+    {
+      "id": "participants",
+      "kind": "client",
+      "description": "Public submitters and pseudonymous participants (browser)",
+      "source": "src/app/intake"
+    },
+    {
+      "id": "staff",
+      "kind": "client",
+      "description": "Authenticated staff members (browser)",
+      "source": "src/app/admin"
+    },
+    {
+      "id": "server-keys",
+      "kind": "key-material",
+      "description": "PROTECTED_DATA_ENCRYPTION_KEY, WEBHOOK_ENCRYPTION_KEY held in the hosting provider's secret store",
+      "source": "src/lib/env.ts"
+    }
+  ],
+  "dataFlows": [
+    {
+      "from": "participants",
+      "to": "web-app",
+      "data": "form answers, files, resume codes, access secrets",
+      "protection": "TLS; secrets stored as hashes; protected fields encrypted before persistence",
+      "classification": "protected-and-ordinary"
+    },
+    {
+      "from": "web-app",
+      "to": "postgresql",
+      "data": "all records",
+      "protection": "TLS (sslmode=require); protected fields AES-256-GCM with server-held key",
+      "classification": "protected-and-ordinary"
+    },
+    {
+      "from": "web-app",
+      "to": "document-store",
+      "data": "document versions",
+      "protection": "HTTPS, SigV4, create-only PUT, SHA-256 custody",
+      "classification": "ordinary-quarantined"
+    },
+    {
+      "from": "worker",
+      "to": "malware-scanner",
+      "data": "document bytes",
+      "protection": "local process or HTTPS without redirects; bounded response",
+      "classification": "ordinary-quarantined"
+    },
+    {
+      "from": "worker",
+      "to": "email-api",
+      "data": "notification titles/bodies, correspondence text, recipient addresses",
+      "protection": "HTTPS without redirects; bearer token; idempotency key",
+      "classification": "ordinary"
+    },
+    {
+      "from": "worker",
+      "to": "webhook-receivers",
+      "data": "event envelopes without protected values",
+      "protection": "HTTPS (or allow-listed private origin), HMAC-SHA256 signature",
+      "classification": "ordinary"
+    },
+    {
+      "from": "downstream-api-clients",
+      "to": "web-app",
+      "data": "submissions, case operations; protected values only with submission:view_protected",
+      "protection": "TLS; hashed bearer tokens; tenant from credential; rate limit",
+      "classification": "protected-and-ordinary"
+    },
+    {
+      "from": "staff",
+      "to": "web-app",
+      "data": "case work; protected values via dual-control reveal",
+      "protection": "TLS; httpOnly SameSite=Strict session; RBAC; audit",
+      "classification": "protected-and-ordinary"
+    },
+    {
+      "from": "web-app",
+      "to": "participants",
+      "data": "status and participant-visible messages only",
+      "protection": "TLS; participant session; minimised projection",
+      "classification": "ordinary"
+    },
+    {
+      "from": "server-keys",
+      "to": "web-app",
+      "data": "encryption keys",
+      "protection": "provider secret store; never logged",
+      "classification": "key-material"
+    }
+  ],
   "sourceObservations": [
     {
       "path": "README.md",
-      "blobSha": "a915a4b7aff44cc086438b019f76903a5783706e"
+      "blobSha": "8fd3c64df94b9a6bb927ed5357c88e981c1aba7c"
+    },
+    {
+      "path": "src/modules/protected-data/crypto.ts",
+      "blobSha": "cdaa4d20d7d7aa3678038626d07d705382cae135"
+    },
+    {
+      "path": "src/modules/webhooks/crypto.ts",
+      "blobSha": "c47b2ce012cba45902dfcaa2216ff5b93896fe9e"
+    },
+    {
+      "path": "src/modules/documents/storage-s3.ts",
+      "blobSha": "76a891ceea0225bb1f71d09f2271e39611cfc3e7"
+    },
+    {
+      "path": "src/modules/documents/scanner.ts",
+      "blobSha": "d9ffdd7f105905c932465f9fb8d27f72e4a99669"
+    },
+    {
+      "path": "src/modules/email/http-email.ts",
+      "blobSha": "ec3c9752628fe0d3e85445f18832b1392a2dc769"
+    },
+    {
+      "path": "src/modules/auth/server-session.ts",
+      "blobSha": "db1a04d1a884a1f22335135ba97c0d056c453628"
+    },
+    {
+      "path": "next.config.ts",
+      "blobSha": "436fa630c8e12f2c0b83e4bd5ffd00db9ba01066"
     }
   ],
   "limitations": [
-    "This is a discovery placeholder, not a complete E2EESA component inventory or a claim that no protected flows exist.",
-    "Use the pinned upstream 0.2 component-inventory and scoped-assessment contracts for actual assessment."
+    "AI-assisted source review under the owner's 2026-10-13 policy; not an independent expert review and not a conformance claim.",
+    "Hosting-edge TLS, provider disk encryption and secret-store custody are outside this repository and were not inspected.",
+    "Coverage is not declared complete until the upstream 0.2 component-inventory contract is applied and independently reviewed.",
+    "See docs/architecture/0036-e2eesa-aligned-security-architecture.md for endpoint encryption, disclosure boundaries and achievable claims."
   ]
 }

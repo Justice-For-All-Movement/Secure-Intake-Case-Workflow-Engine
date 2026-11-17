@@ -9,7 +9,7 @@
   "scopeNote": "42 stable source work units retained. SI-28\u201334 are defined by explicit ADRs 0028\u20130034 and verified actual PRs. SI-28/SI-29 overlap earlier SI-26/SI-27 and are explicitly annotated; this historic plan fraction is not an estimate of application completion. Stable 1.0 remains separate from accepted implementation PRs.",
   "schemaVersion": 1,
   "roadmapVersion": 2,
-  "observedAt": "2026-10-17T21:58:17Z",
+  "observedAt": "2026-11-17T04:30:00Z",
   "units": [
     {
       "id": "SI-01",
@@ -452,7 +452,9 @@
       "id": "SI-35",
       "title": "Reproducible builds and supply chain",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        54
+      ],
       "dependsOn": [],
       "externalDependencies": [],
       "externalPrerequisites": [],
@@ -462,13 +464,18 @@
         33,
         34,
         35
-      ]
+      ],
+      "completionStatus": "complete",
+      "mappingEvidence": "#54 ports SI-35 draft #45: .dockerignore excludes secrets/runtime data; Docker and CI install with npm ci against the committed package-lock.json. With #30/#31/#33/#34/#35 (digest-pinned images, SBOM/provenance release workflow, release-request dispatch, deployment-image verification) the supply-chain scope is implemented. Closed drafts #45-#49 are never counted."
     },
     {
       "id": "SI-36",
       "title": "Production deployment",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        53,
+        54
+      ],
       "dependsOn": [],
       "externalDependencies": [],
       "externalPrerequisites": [],
@@ -477,65 +484,97 @@
         36,
         37,
         38
-      ]
+      ],
+      "completionStatus": "complete",
+      "mappingEvidence": "Live Render service intake-pam (Docker, auto-deploy from main) runs migrations, one-time bootstrap and the worker beside the web app (scripts/container-start.sh, commit 079f733); /api/health and /api/ready verified live on 2026-11-17. #54 adds bounded readiness, stricter preflight and migration-target/deployment-image checks (from draft #47); #53 points the health probe at the live service."
     },
     {
       "id": "SI-37",
       "title": "Data protection and durability",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        54,
+        55
+      ],
       "dependsOn": [],
       "externalDependencies": [],
-      "externalPrerequisites": [],
+      "externalPrerequisites": [
+        "Owner: provide a private S3-compatible bucket; set DOCUMENT_STORAGE_DRIVER=s3, DOCUMENT_S3_ENDPOINT, DOCUMENT_S3_REGION, DOCUMENT_S3_BUCKET, DOCUMENT_S3_ACCESS_KEY_ID, DOCUMENT_S3_SECRET_ACCESS_KEY on the service and the same names as repository secrets; run the Live provider verification workflow with require=s3.",
+        "Owner: provide a malware scanner (MALWARE_SCANNER_DRIVER=http with MALWARE_SCANNER_URL, MALWARE_SCANNER_PROVIDER, MALWARE_SCANNER_TOKEN; or clamscan with CLAMSCAN_DATABASE_DIR on an instance with at least 2 GB) and run the workflow with require=scanner.",
+        "Owner: set NEON_API_KEY and NEON_PROJECT_ID (optional NEON_SOURCE_BRANCH_ID, NEON_DATABASE_NAME, NEON_ROLE_NAME) as repository secrets and run the restore-drill job."
+      ],
       "contributingPrs": [
         28
-      ]
+      ],
+      "completionStatus": "complete-pending-owner-credentials",
+      "mappingEvidence": "#54 (from draft #48): S3 create-only versions, no redirects, bounded timeouts, categorical scan failures. #55: retention sweep for drafts and idempotency responses, opt-in live S3/scanner verification and Neon point-in-time restore drill, operations runbook (key custody, restore). Live acceptance needs owner-provided provider credentials."
     },
     {
       "id": "SI-38",
       "title": "E2EESA aligned security architecture",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        54,
+        56
+      ],
       "dependsOn": [],
       "externalDependencies": [],
       "externalPrerequisites": [],
       "contributingPrs": [
         40,
         41
-      ]
+      ],
+      "completionStatus": "complete",
+      "mappingEvidence": "#54 (from draft #49): undeclared/inherited answer keys dropped, canonical protected-payload and webhook-secret envelopes, categorical webhook failures. ADR 0036 reviews endpoint encryption, audited disclosure boundaries and achievable claims; security/e2eesa-inventory.json lists components and flows. The E2EESA status stages are tracked separately and stay unchecked; independent expert review is deferred by owner policy and is not claimed."
     },
     {
       "id": "SI-39",
       "title": "Notifications and downstream integration",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        52,
+        55
+      ],
       "dependsOn": [],
       "externalDependencies": [],
-      "externalPrerequisites": [],
+      "externalPrerequisites": [
+        "Owner: choose an email provider; set EMAIL_TRANSPORT_DRIVER=http, EMAIL_HTTP_URL, EMAIL_HTTP_TOKEN, EMAIL_FROM (optional EMAIL_PROVIDER) on the service and as repository secrets, plus LIVE_EMAIL_TEST_RECIPIENT as a repository secret; run the Live provider verification workflow with require=email."
+      ],
       "contributingPrs": [
         12,
         16
-      ]
+      ],
+      "completionStatus": "complete-pending-owner-credentials",
+      "mappingEvidence": "#52 capability negotiation for downstream adapters; signed webhooks and event feed from #16/#21; #54 bounded retry backoff (from draft #46); #55 HTTPS email transport for notifications and correspondence, registered only when configured, verified with a local fake API on the real worker. Live email acceptance needs an owner-chosen provider."
     },
     {
       "id": "SI-40",
       "title": "Monitoring and production acceptance",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        53,
+        55
+      ],
       "dependsOn": [],
       "externalDependencies": [],
-      "externalPrerequisites": [],
+      "externalPrerequisites": [
+        "Owner: after providers are configured, run the synthetic end-to-end acceptance in docs/ACCEPTANCE_LEDGER.md on the live service and keep GitHub Actions failure notifications enabled for the health workflow."
+      ],
       "contributingPrs": [
         36,
         37,
         38
-      ]
+      ],
+      "completionStatus": "complete-pending-owner-credentials",
+      "mappingEvidence": "#53/#55: scheduled read-only health monitor of the live service with a bounded cold-start wake phase (GitHub Actions failure notifications are the alert channel); readiness diagnostics (#38); deployment-image verification; rollback and incident procedures in docs/OPERATIONS_RUNBOOK.md; acceptance ledger in docs/ACCEPTANCE_LEDGER.md."
     },
     {
       "id": "SI-41",
       "title": "Release security/usability/load tests",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        55
+      ],
       "dependsOn": [],
       "externalDependencies": [],
       "externalPrerequisites": [],
@@ -544,13 +583,17 @@
         19,
         20,
         28
-      ]
+      ],
+      "completionStatus": "complete",
+      "mappingEvidence": "#55 adds concurrent-load and concurrent-idempotency tests plus retention, provider-gated delivery and throttle tests on real PostgreSQL with the served app and the real worker. Existing evidence: adversarial tenancy/authorization tests, axe accessibility in a real browser, keyboard-only journeys, worker lease recovery and clamscan scanning in the CI end-to-end suite."
     },
     {
       "id": "SI-42",
       "title": "Stable generic 1.0 release",
       "origin": "addition",
-      "prs": [],
+      "prs": [
+        56
+      ],
       "dependsOn": [
         "SI-35",
         "SI-36",
@@ -561,10 +604,179 @@
         "SI-41"
       ],
       "externalDependencies": [],
-      "externalPrerequisites": []
+      "externalPrerequisites": [
+        "Owner: decide to release 1.0.0; then one PR changes package.json version and release-request.json (immutable source SHA), and the downstream verifier adds 1.0.0 to supportedVersions before the deployment reports it."
+      ],
+      "completionStatus": "complete-pending-owner-decision",
+      "mappingEvidence": "Acceptance ledger (docs/ACCEPTANCE_LEDGER.md), support runbook (docs/OPERATIONS_RUNBOOK.md) and downstream compatibility notes. Cutting the stable 1.0.0 release is an owner decision coordinated with the downstream identity verifier's supportedVersions."
     }
   ],
   "pullRequests": [
+    {
+      "id": 5350106432,
+      "number": 55,
+      "title": "SI-37/39/40/41: email transport, retention, draft throttle, localized validation, live-provider verification",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/55",
+      "state": "closed",
+      "draft": false,
+      "createdAt": "2026-11-17T03:37:13Z",
+      "updatedAt": "2026-11-17T03:42:18Z",
+      "closedAt": "2026-11-17T03:42:17Z",
+      "mergedAt": "2026-11-17T03:42:17Z",
+      "headSha": "69df65888aede1edf1bd1b26ecb060f8f4c49f1b",
+      "baseRef": "main",
+      "mergeCommitSha": "454920fd365c17eaf8ddcfbb3452539421e16c12"
+    },
+    {
+      "id": 5325856209,
+      "number": 54,
+      "title": "Port hardening from SI-35..SI-39 drafts onto main",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/54",
+      "state": "closed",
+      "draft": false,
+      "createdAt": "2026-11-15T18:36:38Z",
+      "updatedAt": "2026-11-15T18:49:00Z",
+      "closedAt": "2026-11-15T18:49:00Z",
+      "mergedAt": "2026-11-15T18:49:00Z",
+      "headSha": "8347df4959d9ff8e5ed4f4710ecb5392598b3528",
+      "baseRef": "main",
+      "mergeCommitSha": "8892d6856050e0b45aca102dca3c07ff08a3950f"
+    },
+    {
+      "id": 5325714290,
+      "number": 53,
+      "title": "Health probe: check the live intake-pam Render service",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/53",
+      "state": "closed",
+      "draft": false,
+      "createdAt": "2026-11-15T18:20:02Z",
+      "updatedAt": "2026-11-15T18:25:12Z",
+      "closedAt": "2026-11-15T18:25:12Z",
+      "mergedAt": "2026-11-15T18:25:12Z",
+      "headSha": "1be100ec19fe37b2c55445d347206ce765bed78e",
+      "baseRef": "main",
+      "mergeCommitSha": "4945e3bbe966fc45e9324b68c6511f552eaa56c3"
+    },
+    {
+      "id": 5023091628,
+      "number": 52,
+      "title": "Expose authenticated API capabilities for downstream adapters",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/52",
+      "state": "closed",
+      "draft": false,
+      "createdAt": "2026-10-26T19:04:27Z",
+      "updatedAt": "2026-10-26T19:26:43Z",
+      "closedAt": "2026-10-26T19:26:43Z",
+      "mergedAt": "2026-10-26T19:26:43Z",
+      "headSha": "c276cb923379193e1e83ea20acc7b33e7de988de",
+      "baseRef": "main",
+      "mergeCommitSha": "f75990dcb88cb44a89c773975949f7cb22f7ce33"
+    },
+    {
+      "id": 4941654596,
+      "number": 50,
+      "title": "Integrate Development Deployment Monitor (inventory-only)",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/50",
+      "state": "closed",
+      "draft": false,
+      "createdAt": "2026-10-20T19:58:08Z",
+      "updatedAt": "2026-10-20T20:03:01Z",
+      "closedAt": "2026-10-20T20:03:00Z",
+      "mergedAt": "2026-10-20T20:03:00Z",
+      "headSha": "5b95dbf4e431d6c4e2baca913a65af224b8c8735",
+      "baseRef": "main",
+      "mergeCommitSha": "84acf0b66b23bd64af48a55345f2f8492ddd042a"
+    },
+    {
+      "id": 4914048117,
+      "number": 49,
+      "title": "SI-38: E2EESA aligned security architecture",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/49",
+      "state": "closed",
+      "draft": true,
+      "createdAt": "2026-10-19T00:14:54Z",
+      "updatedAt": "2026-11-15T18:49:20Z",
+      "closedAt": "2026-11-15T18:49:20Z",
+      "mergedAt": null,
+      "headSha": "703cf56f77e7d216e2222a421c173a57978bd166",
+      "baseRef": "main",
+      "mergeCommitSha": "7cc47de985e672be7c20c0654a61d5a77381f316"
+    },
+    {
+      "id": 4914000187,
+      "number": 48,
+      "title": "SI-37: Data protection and durability",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/48",
+      "state": "closed",
+      "draft": true,
+      "createdAt": "2026-10-19T00:07:58Z",
+      "updatedAt": "2026-11-15T18:49:17Z",
+      "closedAt": "2026-11-15T18:49:17Z",
+      "mergedAt": null,
+      "headSha": "bda2cff20e958faaff70d2f4d05b588d74d8b7f5",
+      "baseRef": "main",
+      "mergeCommitSha": "e7fa0b98cfeb3482ac22484af17cfa727bf10059"
+    },
+    {
+      "id": 4913961201,
+      "number": 47,
+      "title": "SI-36: Production deployment",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/47",
+      "state": "closed",
+      "draft": true,
+      "createdAt": "2026-10-19T00:01:51Z",
+      "updatedAt": "2026-11-15T18:49:15Z",
+      "closedAt": "2026-11-15T18:49:15Z",
+      "mergedAt": null,
+      "headSha": "8a3021561cc9247ff96604c517690d413ae6c0ab",
+      "baseRef": "main",
+      "mergeCommitSha": "ef36d2459cccd9ab0c90920272aff5b5a3c088e3"
+    },
+    {
+      "id": 4913355416,
+      "number": 46,
+      "title": "SI-39: Notifications and downstream integration",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/46",
+      "state": "closed",
+      "draft": true,
+      "createdAt": "2026-10-18T22:23:55Z",
+      "updatedAt": "2026-11-15T18:49:13Z",
+      "closedAt": "2026-11-15T18:49:13Z",
+      "mergedAt": null,
+      "headSha": "ec70248fd18947ec1f777687855cf2a75f695516",
+      "baseRef": "main",
+      "mergeCommitSha": "b32f6bd8c157ee5648297d254554407bfd3acd24"
+    },
+    {
+      "id": 4913329550,
+      "number": 45,
+      "title": "SI-35: Reproducible builds and supply chain",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/45",
+      "state": "closed",
+      "draft": true,
+      "createdAt": "2026-10-18T22:19:51Z",
+      "updatedAt": "2026-11-15T18:49:11Z",
+      "closedAt": "2026-11-15T18:49:11Z",
+      "mergedAt": null,
+      "headSha": "c15edda690911c5983fef11dc9aa09047019f757",
+      "baseRef": "main",
+      "mergeCommitSha": null
+    },
+    {
+      "id": 4913058428,
+      "number": 44,
+      "title": "Reconcile source-defined ADR mappings and stable-release prerequisites",
+      "url": "https://github.com/neophilism/Secure-Intake-Case-Workflow-Engine/pull/44",
+      "state": "closed",
+      "draft": false,
+      "createdAt": "2026-10-18T21:42:23Z",
+      "updatedAt": "2026-10-18T21:47:27Z",
+      "closedAt": "2026-10-18T21:47:27Z",
+      "mergedAt": "2026-10-18T21:47:27Z",
+      "headSha": "0433a5ef39675719a1a12af50a0517b61cc80adf",
+      "baseRef": "main",
+      "mergeCommitSha": "e3d642c240a9cfb889ea658a0950265df7dce92a"
+    },
     {
       "id": 4852843300,
       "number": 43,
@@ -1200,6 +1412,11 @@
     "packageVersion": "1.0.0-rc.9",
     "stableReleaseVerified": false,
     "productionAcceptanceVerifiedByThisAudit": false,
-    "report": "docs/ENGINE_ROOM_RECONCILIATION_20261018.md"
+    "report": "docs/ENGINE_ROOM_RECONCILIATION_20261018.md",
+    "completion": {
+      "assessedAt": "2026-11-17T04:30:00Z",
+      "summary": "All 42 units have merged source work. SI-37, SI-39 and SI-40 are complete pending owner-provided provider credentials; SI-42 is complete pending the owner's decision to cut 1.0.0.",
+      "ledger": "docs/ACCEPTANCE_LEDGER.md"
+    }
   }
 }

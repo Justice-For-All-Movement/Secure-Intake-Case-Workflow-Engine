@@ -56,3 +56,13 @@ Run the manual workflow "Live provider verification (opt-in)" (input
 - `EMAIL_HTTP_TOKEN`, `DOCUMENT_S3_*`, `MALWARE_SCANNER_TOKEN`: replace in the
   provider, update the service's environment, redeploy, run the live
   verification workflow.
+
+## Roll back a deploy
+
+1. In the Render dashboard for the service, open Events and roll back to the
+   last deploy that passed the health workflow (Render keeps earlier builds).
+2. Check that the migrations applied since that deploy are compatible with
+   the older code before rolling back (the retention and email work in #55
+   added none). Never run down-migrations against production data.
+3. Revert the offending PR on `main` so the next auto-deploy does not bring
+   it back, then confirm the health workflow passes.
