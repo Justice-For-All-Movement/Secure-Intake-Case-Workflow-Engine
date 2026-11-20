@@ -14,6 +14,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Tor publishes the application as an onion service when TOR_ONION_SECRET_KEY is set (scripts/container-start.sh).
+RUN apk add --no-cache tor
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 COPY --from=builder --chown=nextjs:nodejs /app ./
 RUN mkdir -p /app/.data/documents && chown -R nextjs:nodejs /app/.data

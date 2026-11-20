@@ -22,6 +22,12 @@ const schema = z.object({
     .or(z.string().startsWith("postgres://"))
     .optional(),
   APP_BASE_URL: applicationBaseUrlSchema.default("http://localhost:3000"),
+  // Optional Tor onion service address of the same application (http://<56 characters>.onion). Requests from it are
+  // trusted like requests from APP_BASE_URL.
+  ONION_ORIGIN: z
+    .string()
+    .regex(/^http:\/\/[a-z2-7]{56}\.onion$/, "ONION_ORIGIN must be http://<v3 onion address>.onion")
+    .optional(),
   AUTH_SESSION_COOKIE_NAME: z
     .string()
     .regex(/^[A-Za-z0-9_-]{1,100}$/)
@@ -60,6 +66,7 @@ const schema = z.object({
 export const env = schema.parse({
   DATABASE_URL: process.env.DATABASE_URL,
   APP_BASE_URL: process.env.APP_BASE_URL,
+  ONION_ORIGIN: process.env.ONION_ORIGIN || undefined,
   AUTH_SESSION_COOKIE_NAME: process.env.AUTH_SESSION_COOKIE_NAME,
   AUTH_SESSION_TTL_HOURS: process.env.AUTH_SESSION_TTL_HOURS,
   PARTICIPANT_SESSION_COOKIE_NAME:

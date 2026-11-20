@@ -4,8 +4,13 @@ export function trustedApplicationOrigin(): string {
   return new URL(env.APP_BASE_URL).origin;
 }
 
+/** The application's own origins: its web address and, when configured, its Tor onion address. */
+export function trustedApplicationOrigins(): string[] {
+  return [trustedApplicationOrigin(), ...(env.ONION_ORIGIN ? [env.ONION_ORIGIN] : [])];
+}
+
 export function isTrustedBrowserMutation(request: Request): boolean {
-  const expected = trustedApplicationOrigin();
+  const expected = trustedApplicationOrigins();
   const fetchSite = request.headers.get("sec-fetch-site");
 
   if (fetchSite === "cross-site") {
@@ -15,7 +20,7 @@ export function isTrustedBrowserMutation(request: Request): boolean {
   const origin = request.headers.get("origin");
   if (origin) {
     try {
-      return new URL(origin).origin === expected;
+      return expected.includes(new URL(origin).origin);
     } catch {
       return false;
     }
@@ -24,7 +29,7 @@ export function isTrustedBrowserMutation(request: Request): boolean {
   const referer = request.headers.get("referer");
   if (referer) {
     try {
-      return new URL(referer).origin === expected;
+      return expected.includes(new URL(referer).origin);
     } catch {
       return false;
     }
