@@ -15,6 +15,7 @@ if [ -n "${TOR_ONION_SECRET_KEY:-}" ]; then (
   mkdir -p /tmp/tor/hs /tmp/tor/data
   echo "$TOR_ONION_SECRET_KEY" | base64 -d > /tmp/tor/hs/hs_ed25519_secret_key
   printf 'DataDirectory /tmp/tor/data\nSocksPort 0\nHiddenServiceDir /tmp/tor/hs\nHiddenServicePort 80 127.0.0.1:%s\nLog notice stdout\n' "${PORT:-3000}" > /tmp/tor/torrc
-  tor -f /tmp/tor/torrc | grep --line-buffered -E "Bootstrapped 100|warn|err" &
+  echo "onion service: starting Tor"
+  tor -f /tmp/tor/torrc &
 ) fi
 exec npx next start --hostname 0.0.0.0 --port "${PORT:-3000}"
