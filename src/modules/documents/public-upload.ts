@@ -117,6 +117,9 @@ export async function stagePublicSubmissionUploads(
   try {
     for (const field of fieldsInDefinition(definition)) {
       if (field.type !== "file" || !visible.has(field.id)) continue;
+      // Sealed files are encrypted in the browser into the sealed envelope;
+      // a file posted in clear under a sealed field is never stored.
+      if (field.sealed) continue;
 
       const files = browserFiles(formData, field.id);
       if (!field.publicUpload) {

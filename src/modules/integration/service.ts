@@ -58,6 +58,10 @@ import { submitPublicForm } from "@/modules/forms/service";
 import { getCaseParticipantMessagingCapability } from "@/modules/participant-portal/service";
 import { decryptProtectedPayload } from "@/modules/protected-data/crypto";
 import {
+  findSealedEnvelope,
+  findSealedEnvelopeSummary,
+} from "@/modules/sealed/service";
+import {
   addTeamMember,
   applyRoutingRules,
   CaseAssignmentError,
@@ -183,7 +187,7 @@ export async function getSubmission(
 ) {
   const scope = ctx.tenantScope;
   const row = await loadSubmission(db, scope, submissionId);
-  const [compartments, [caseRecord], [credential], attachments] =
+  const [compartments, [caseRecord], [credential], attachments, sealed] =
     await Promise.all([
       db
         .select({
@@ -236,6 +240,7 @@ export async function getSubmission(
             eq(documentSubmissionLinks.submissionId, submissionId),
           ),
         ),
+      findSealedEnvelopeSummary(db, scope, submissionId),
     ]);
 
   const definition = parseFormDefinition(row.version.definition);
@@ -259,6 +264,7 @@ export async function getSubmission(
         type: field.type,
         label: field.label,
         protected: Boolean(field.protection),
+        sealed: field.sealed === true,
       })),
     },
     originalAccount: {
@@ -273,6 +279,20 @@ export async function getSubmission(
       immutable: true,
     },
     protectedCompartments: compartments,
+    // Answers encrypted in the participant's browser: never readable here.
+    sealed: sealed
+      ? {
+          fieldIds: fieldsInDefinition(definition)
+            .filter((field) => field.sealed)
+            .map((field) => field.id),
+          commitment: sealed.commitment,
+          recipientKeyIds: sealed.recipientKeyIds,
+          sizeBytes: sealed.sizeBytes,
+          receivedAt: sealed.receivedAt,
+          sourceRiskLevel: definition.sealing?.sourceRiskLevel ?? null,
+          envelopePath: `/api/v1/submissions/${row.submission.id}/sealed`,
+        }
+      : null,
     attachmentCount: attachments.length,
     case: caseRecord ?? null,
     participantPortal: {
@@ -340,6 +360,42 @@ export async function getSubmissionProtected(
   return { submissionId, compartments };
 }
 
+/**
+ * The sealed envelope of a submission, for the downstream reader that holds
+ * the private keys. Ciphertext only; reading it is audited.
+ */
+export async function getSubmissionSealedEnvelope(
+  db: Database,
+  ctx: Ctx,
+  submissionId: string,
+) {
+  const scope = ctx.tenantScope;
+  const row = await loadSubmission(db, scope, submissionId);
+  const sealed = await findSealedEnvelope(db, scope, submissionId);
+  if (!sealed) throw notFound("Sealed envelope");
+  const definition = parseFormDefinition(row.version.definition);
+  await db.insert(auditEvents).values(
+    auditEventValues({
+      organizationId: scope.organizationId,
+      actorType: "system",
+      action: "sealed_envelope.service_read",
+      resourceType: "submission",
+      resourceId: submissionId,
+      source: "api",
+      metadata: { apiClientId: ctx.clientId, commitment: sealed.commitment },
+    }),
+  );
+  return {
+    submissionId,
+    receivedAt: sealed.createdAt,
+    commitment: sealed.commitment,
+    recipientKeyIds: sealed.recipientKeyIds,
+    sizeBytes: sealed.sizeBytes,
+    sourceRiskLevel: definition.sealing?.sourceRiskLevel ?? null,
+    envelope: JSON.parse(sealed.envelopeJson) as unknown,
+  };
+}
+
 export async function createSubmission(
   db: Database,
   ctx: Ctx,
@@ -353,6 +409,13 @@ export async function createSubmission(
     Array.isArray(body.answers)
   ) {
     throw invalid("answers must be an object keyed by field id.");
+  }
+  if (
+    body.sealedEnvelope !== undefined &&
+    body.sealedEnvelope !== null &&
+    (typeof body.sealedEnvelope !== "object" || Array.isArray(body.sealedEnvelope))
+  ) {
+    throw invalid("sealedEnvelope must be a sealed envelope object.");
   }
   const [organization] = await db
     .select({ slug: organizations.slug })
@@ -368,7 +431,13 @@ export async function createSubmission(
     body.answers as Record<string, unknown>,
     null,
     [],
-    { locale, channel: "api", publicOnly: false },
+    {
+      locale,
+      channel: "api",
+      publicOnly: false,
+      sealedEnvelope:
+        (body.sealedEnvelope as Record<string, unknown> | null | undefined) ?? null,
+    },
   );
 
   return {

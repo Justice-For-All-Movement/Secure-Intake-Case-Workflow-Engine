@@ -52,6 +52,8 @@ export function validateSubmissionAnswers(
 
   for (const field of fieldsInDefinition(definition)) {
     if (!visibleFieldIds.has(field.id)) continue;
+    // Checked in the browser; the server only checks the envelope exists.
+    if (field.sealed) continue;
 
     const value = Object.prototype.hasOwnProperty.call(answers, field.id)
       ? answers[field.id]
@@ -77,7 +79,9 @@ export function filterKnownAnswers(
   definition: FormDefinition,
   rawAnswers: AnswerMap,
 ): AnswerMap {
-  const fields = fieldsInDefinition(definition);
+  // Sealed answers are never accepted in clear: they arrive only inside the
+  // sealed envelope, so a plaintext value for a sealed field is dropped here.
+  const fields = fieldsInDefinition(definition).filter((field) => !field.sealed);
   const known = new Set(fields.map((field) => field.id));
   const declaredAnswers = Object.fromEntries(
     Object.entries(rawAnswers).filter(([fieldId]) => known.has(fieldId)),

@@ -136,6 +136,9 @@ export async function submitPublicFormAction(
   }
 
   let stagedUploads: StagedPublicUploadSet | null = null;
+  // Sealed answers arrive only as the envelope the participant's browser
+  // encrypted (never for drafts, never in clear). Validated in the service.
+  const sealedEnvelope = rawField(formData, "__sealed");
 
   try {
     stagedUploads = await stagePublicSubmissionUploads(
@@ -163,6 +166,7 @@ export async function submitPublicFormAction(
             draftCode,
             submissionAnswers,
             stagedUploads.uploads,
+            { sealedEnvelope },
           );
         } catch (error) {
           if (!(error instanceof FormNotAvailableError)) throw error;
@@ -177,7 +181,7 @@ export async function submitPublicFormAction(
           submissionAnswers,
           null,
           stagedUploads.uploads,
-          { locale },
+          { locale, sealedEnvelope },
         ));
     } catch (error) {
       await cleanupStagedPublicUploads(stagedUploads);
@@ -231,6 +235,11 @@ export async function submitPublicFormAction(
   }
 
   return { status: "idle", errors: [] };
+}
+
+function rawField(formData: FormData, name: string) {
+  const value = formData.get(name);
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 function stringField(formData: FormData, name: string) {

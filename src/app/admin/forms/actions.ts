@@ -14,6 +14,9 @@ import {
   publishFormVersion,
 } from "@/modules/forms/repository";
 
+import { SealingUnavailableError } from "@/modules/sealed/recipients";
+import { SealedRoutingError } from "@/modules/sealed/policy";
+
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 async function requireFormManager() {
@@ -115,7 +118,13 @@ export async function publishVersionAction(formData: FormData) {
       versionId,
       context.user.id,
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof SealingUnavailableError) {
+      redirect("/admin/forms?error=sealing_unavailable");
+    }
+    if (error instanceof SealedRoutingError) {
+      redirect("/admin/forms?error=sealed_field_used_by_routing");
+    }
     redirect("/admin/forms?error=publish_failed");
   }
 

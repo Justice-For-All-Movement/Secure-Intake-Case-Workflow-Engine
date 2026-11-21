@@ -23,6 +23,7 @@ import {
   type RoutingRuleDefinition,
 } from "./definition";
 import { routingRuleMatches } from "./evaluator";
+import { assertRoutingAvoidsSealedFields } from "@/modules/sealed/policy";
 import { roundRobinIndex } from "./round-robin";
 
 export class RoutingTargetUnavailableError extends Error {
@@ -277,6 +278,7 @@ export async function createRoutingRule(
   },
 ) {
   const definition = parseRoutingRuleDefinition(input.definition);
+  await assertRoutingAvoidsSealedFields(db, scope, definition);
   const [queue] = await db
     .select()
     .from(caseQueues)

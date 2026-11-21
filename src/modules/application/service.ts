@@ -30,6 +30,11 @@ import { auditEventValues } from "@/modules/audit/event";
 import { validateCommunicationTemplate } from "@/modules/communications/template";
 import { checksumJson } from "./canonical";
 import {
+  assertNoRoutingOnSealedFields,
+  assertRoutingAvoidsSealedFields,
+  assertSealingAvailableForDefinition,
+} from "@/modules/sealed/policy";
+import {
   parseApplicationManifest,
   type ApplicationManifest,
 } from "./manifest";
@@ -52,6 +57,10 @@ export async function applyApplicationManifest(
   const manifest = parseApplicationManifest(input);
   validateManifestTemplates(manifest);
   validateTimeZones(manifest);
+  // A form with sealed fields is published only where sealing recipients exist.
+  for (const form of manifest.forms) {
+    assertSealingAvailableForDefinition(form.definition);
+  }
 
   const manifestHash = checksumJson(manifest);
 
@@ -820,6 +829,7 @@ export async function applyApplicationManifest(
     }
 
     for (const configured of manifest.routingRules) {
+      await assertRoutingAvoidsSealedFields(tx, scope, configured.definition);
       const targetQueueId = queueIds.get(configured.targetQueueSlug);
       if (!targetQueueId) {
         throw new Error(
@@ -876,6 +886,10 @@ export async function applyApplicationManifest(
         resource.id,
         configured,
       );
+    }
+
+    for (const configured of manifest.forms) {
+      await assertNoRoutingOnSealedFields(tx, scope, configured.definition);
     }
 
     const policyIds = new Map<string, string>();

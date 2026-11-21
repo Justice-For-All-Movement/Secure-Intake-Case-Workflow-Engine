@@ -16,6 +16,10 @@ import {
 import type { TenantScope } from "@/lib/tenancy";
 import { auditEventValues } from "@/modules/audit/event";
 import {
+  assertNoRoutingOnSealedFields,
+  assertSealingAvailableForDefinition,
+} from "@/modules/sealed/policy";
+import {
   parseFormDefinition,
   type FormDefinition,
 } from "./definition";
@@ -229,6 +233,12 @@ export async function publishFormVersion(
     if (!form || form.status !== "active") {
       throw new Error("The parent form is not active.");
     }
+
+    // Sealed fields need the deployment's sealing recipients, and must not be
+    // read by any routing rule (the server cannot read them).
+    const definition = parseFormDefinition(version.definition);
+    assertSealingAvailableForDefinition(definition);
+    await assertNoRoutingOnSealedFields(tx, scope, definition);
 
     await tx
       .update(intakeFormVersions)
