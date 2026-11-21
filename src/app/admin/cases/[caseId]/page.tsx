@@ -49,6 +49,8 @@ import { CaseCommunicationsPanel } from "./communications-panel";
 import { CaseReviewsPanel } from "./reviews-panel";
 import { CaseTimelinePanel } from "./timeline-panel";
 import { CaseProtectedDataPanel } from "./protected-data-panel";
+import { SealedAnswersPanel } from "./sealed-answers-panel";
+import { findSealedEnvelopeSummary } from "@/modules/sealed/service";
 import { CaseReferralsPanel } from "./referrals-panel";
 import {
   listProtectedCompartmentsForSubmission,
@@ -283,6 +285,10 @@ export default async function CaseDetailPage({
         context.permissions,
       ),
     );
+
+  const sealedSummary = source
+    ? await findSealedEnvelopeSummary(db, scope, source.submissionId)
+    : null;
 
   const protectedCompartments =
     record.sourceSubmissionId && canViewProtectedMetadata
@@ -1275,6 +1281,12 @@ export default async function CaseDetailPage({
           </p>
           <p>Confirmation: {source.confirmationCode ?? "—"}</p>
           <pre>{JSON.stringify(source.answers, null, 2)}</pre>
+          {sealedSummary ? (
+            <SealedAnswersPanel
+              submissionId={source.submissionId}
+              summary={sealedSummary}
+            />
+          ) : null}
         </section>
       ) : record.sourceSubmissionId ? (
         <section>

@@ -8,7 +8,11 @@ import {
 } from "@/modules/forms/localization";
 import { getRuntimeDatabase } from "@/db/runtime";
 import { FormRenderer } from "@/components/forms/form-renderer";
-import { fieldsInDefinition } from "@/modules/forms/definition";
+import {
+  definitionUsesSealing,
+  fieldsInDefinition,
+} from "@/modules/forms/definition";
+import { sealingConfig } from "@/modules/sealed/recipients";
 import { findApplicationProfileByOrganizationSlug } from "@/modules/application/repository";
 import { findPublishedFormBySlugs } from "@/modules/forms/repository";
 import { submitPublicFormAction } from "./actions";
@@ -76,8 +80,25 @@ export default async function PublicIntakePage({
   const requiresAttachmentAdapter = fieldsInDefinition(
     published.definition,
   ).some(
-    (field) => field.type === "file" && field.required && !field.publicUpload,
+    (field) =>
+      field.type === "file" &&
+      field.required &&
+      !field.publicUpload &&
+      !field.sealed,
   );
+  // Public keys only: sealed answers are encrypted to them in the browser.
+  const sealingState = definitionUsesSealing(published.definition)
+    ? sealingConfig()
+    : null;
+  const sealing =
+    sealingState?.status === "ready"
+      ? {
+          recipients: sealingState.recipients.map((recipient) => ({
+            id: recipient.keyId,
+            publicJwk: recipient.publicJwk,
+          })),
+        }
+      : null;
   const localized = localizeFormDefinition(
     published.definition,
     resolveFormLocale(published.definition, [
@@ -151,6 +172,7 @@ export default async function PublicIntakePage({
           action={action}
           ui={localized.ui}
           locale={localized.locale}
+          sealing={sealing}
         />
       )}
     </main>

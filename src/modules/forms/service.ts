@@ -23,6 +23,13 @@ import {
   persistStagedPublicUploads,
   type StagedPublicUpload,
 } from "@/modules/documents/public-upload";
+import {
+  checkSealedSubmission,
+  storeSealedEnvelope,
+} from "@/modules/sealed/service";
+import type { CheckedSealedEnvelope } from "@/modules/sealed/envelope";
+import type { FormDefinition } from "./definition";
+import type { ValidationError } from "./validation";
 
 export class FormNotAvailableError extends Error {
   constructor() {
@@ -39,6 +46,34 @@ export class SubmissionValidationError extends Error {
     this.name = "SubmissionValidationError";
     this.errors = errors;
   }
+}
+
+/**
+ * Validates ordinary answers and the sealed part of a submission together.
+ * Sealed answers are accepted only as an envelope encrypted in the
+ * participant's browser; a sealed field sent in clear is refused and never
+ * stored. Drafts never carry sealed answers.
+ */
+function validateWithSealing(
+  definition: FormDefinition,
+  rawAnswers: AnswerMap,
+  options: { partial?: boolean; draft?: boolean; sealedEnvelope?: string | Record<string, unknown> | null },
+): { answers: AnswerMap; sealed: CheckedSealedEnvelope | null } {
+  const validation = validateSubmissionAnswers(definition, rawAnswers, {
+    partial: options.partial,
+  });
+  const sealed = checkSealedSubmission(definition, {
+    rawAnswers,
+    ordinaryAnswers: validation.answers,
+    envelope: options.sealedEnvelope,
+    draft: options.draft,
+  });
+  const errors: ValidationError[] = [
+    ...validation.errors,
+    ...(sealed.ok ? [] : sealed.errors),
+  ];
+  if (errors.length > 0) throw new SubmissionValidationError(errors);
+  return { answers: validation.answers, sealed: sealed.ok ? sealed.sealed : null };
 }
 
 export interface DraftSubmissionResult {
@@ -64,14 +99,10 @@ export async function createPublicDraftSubmission(
     throw new FormNotAvailableError();
   }
 
-  const validation = validateSubmissionAnswers(
-    published.definition,
-    rawAnswers,
-    { partial: true },
-  );
-  if (!validation.success) {
-    throw new SubmissionValidationError(validation.errors);
-  }
+  const validation = validateWithSealing(published.definition, rawAnswers, {
+    partial: true,
+    draft: true,
+  });
 
   const split = splitProtectedAnswers(
     published.definition,
@@ -121,15 +152,10 @@ export async function updateDraftSubmissionByToken(
   }
 
   const { definition } = await findVersionForSubmission(db, submission);
-  const validation = validateSubmissionAnswers(
-    definition,
-    rawAnswers,
-    { partial: true },
-  );
-
-  if (!validation.success) {
-    throw new SubmissionValidationError(validation.errors);
-  }
+  const validation = validateWithSealing(definition, rawAnswers, {
+    partial: true,
+    draft: true,
+  });
 
   const split = splitProtectedAnswers(definition, validation.answers);
 
@@ -160,6 +186,7 @@ export async function submitDraftSubmissionByToken(
   resumeToken: string,
   rawAnswers: AnswerMap,
   stagedUploads: readonly StagedPublicUpload[] = [],
+  options: { sealedEnvelope?: string | Record<string, unknown> | null } = {},
 ) {
   const submission = await findSubmissionDraftByTokenHash(
     db,
@@ -170,14 +197,9 @@ export async function submitDraftSubmissionByToken(
   }
 
   const { definition } = await findVersionForSubmission(db, submission);
-  const validation = validateSubmissionAnswers(
-    definition,
-    rawAnswers,
-  );
-
-  if (!validation.success) {
-    throw new SubmissionValidationError(validation.errors);
-  }
+  const validation = validateWithSealing(definition, rawAnswers, {
+    sealedEnvelope: options.sealedEnvelope,
+  });
 
   const split = splitProtectedAnswers(definition, validation.answers);
 
@@ -199,6 +221,16 @@ export async function submitDraftSubmissionByToken(
       compartments: split.compartments,
       encrypt: encryptProtectedPayload,
     });
+
+    if (validation.sealed) {
+      await storeSealedEnvelope(tx, {
+        organizationId: finalized.organizationId,
+        submissionId: finalized.id,
+        sealed: validation.sealed,
+        actorType: finalized.submitterUserId ? "user" : "anonymous",
+        actorUserId: finalized.submitterUserId,
+      });
+    }
 
     if (stagedUploads.length > 0) {
       await persistStagedPublicUploads(
@@ -235,6 +267,7 @@ export async function submitPublicForm(
     locale?: string | null;
     channel?: "public_form" | "api";
     publicOnly?: boolean;
+    sealedEnvelope?: string | Record<string, unknown> | null;
   } = {},
 ) {
   const published = await findPublishedFormBySlugs(
@@ -248,14 +281,9 @@ export async function submitPublicForm(
     throw new FormNotAvailableError();
   }
 
-  const validation = validateSubmissionAnswers(
-    published.definition,
-    rawAnswers,
-  );
-
-  if (!validation.success) {
-    throw new SubmissionValidationError(validation.errors);
-  }
+  const validation = validateWithSealing(published.definition, rawAnswers, {
+    sealedEnvelope: options.sealedEnvelope,
+  });
 
   const split = splitProtectedAnswers(
     published.definition,
@@ -281,6 +309,16 @@ export async function submitPublicForm(
       compartments: split.compartments,
       encrypt: encryptProtectedPayload,
     });
+
+    if (validation.sealed) {
+      await storeSealedEnvelope(tx, {
+        organizationId: submission.organizationId,
+        submissionId: submission.id,
+        sealed: validation.sealed,
+        actorType: submission.submitterUserId ? "user" : "anonymous",
+        actorUserId: submission.submitterUserId,
+      });
+    }
 
     if (stagedUploads.length > 0) {
       await persistStagedPublicUploads(

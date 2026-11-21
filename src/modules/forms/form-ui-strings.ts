@@ -64,6 +64,27 @@ export const defaultFormUiStrings = {
   validationMinLength: "Enter at least {minLength} characters.",
   validationMaxLength: "Enter no more than {maxLength} characters.",
   validationPattern: "The value does not match the required format.",
+  sealedNotice:
+    "Answers marked “Sealed” are encrypted on this device before they are sent. Only the research team can read them; this service keeps only an encrypted copy it cannot open.",
+  sealedBadge: "Sealed",
+  sealedNeedsScript:
+    "Sealed answers are encrypted on your device and need JavaScript. With JavaScript turned off these fields are disabled and nothing typed in them is sent.",
+  sealedUnavailable:
+    "Sealed answers cannot be accepted right now, so these fields are disabled and nothing in them is sent.",
+  sealedDraftNotice:
+    "Sealed answers are never saved in a draft; fill them in before you submit.",
+  sealedFileNotice:
+    "Files here are encrypted on this device together with your sealed answers.",
+  sealedEncrypting: "Encrypting your sealed answers on this device…",
+  sealedFailed:
+    "Your sealed answers could not be encrypted on this device, so nothing was sent. Try again, or use another browser.",
+  sealedFilesTooLarge: "Sealed files may total at most {maxMegabytes} MB.",
+  validationSealed:
+    "This answer must be encrypted on your device before it is sent.",
+  validationSealedUnavailable:
+    "Sealed answers cannot be accepted right now.",
+  validationSealedInvalid:
+    "Your encrypted answers could not be accepted. Reload the page and try again.",
   draftRateLimited:
     "Too many drafts were started from this connection. Try again later.",
 } as const;
@@ -101,6 +122,9 @@ export const validationMessageKeys = {
   min_length: "validationMinLength",
   max_length: "validationMaxLength",
   pattern: "validationPattern",
+  sealed: "validationSealed",
+  sealed_unavailable: "validationSealedUnavailable",
+  sealed_invalid: "validationSealedInvalid",
 } as const satisfies Record<string, FormUiStringKey>;
 
 export type ValidationCode = keyof typeof validationMessageKeys;

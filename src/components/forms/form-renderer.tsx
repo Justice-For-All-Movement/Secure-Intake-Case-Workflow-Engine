@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  startTransition,
   useActionState,
   useEffect,
   useRef,
@@ -21,12 +22,24 @@ import {
   type FormUiStrings,
   validationMessage,
 } from "@/modules/forms/form-ui-strings";
+import type { SealingPublicJwk } from "@/modules/sealed/sealed-crypto";
+import { buildSealedContent, type SealedFileInput } from "./sealed-content";
+
+/** Raw bytes of sealed files a participant may attach (matches the server's envelope limit). */
+const SEALED_FILES_MAX_BYTES = 20_000_000;
+const ADDRESS_PARTS = ["line1", "line2", "city", "region", "postalCode", "country"] as const;
+
+/** Public keys sealed answers are encrypted to; null when sealing is unavailable. */
+export interface FormSealing {
+  recipients: Array<{ id: string; publicJwk: SealingPublicJwk }>;
+}
 
 export function FormRenderer({
   definition,
   action,
   ui = defaultFormUiStrings,
   locale,
+  sealing = null,
 }: {
   definition: FormDefinition;
   action: (
@@ -35,6 +48,7 @@ export function FormRenderer({
   ) => Promise<PublicFormActionState>;
   ui?: FormUiStrings;
   locale?: string;
+  sealing?: FormSealing | null;
 }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [draftCode, setDraftCode] = useState("");
@@ -46,6 +60,30 @@ export function FormRenderer({
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const draftNoticeRef = useRef<HTMLDivElement>(null);
   const resumable = definition.resumableDrafts !== false;
+
+  // Sealed fields: encrypted on this device; their controls carry no `name`,
+  // so a form post (with or without JavaScript) never contains them, and they
+  // stay disabled until this browser is known to be able to encrypt.
+  const sealedFields = definition.sections
+    .flatMap((section) => section.fields)
+    .filter((field) => field.sealed === true);
+  const hasSealed = sealedFields.length > 0;
+  const [sealingChecked, setSealingChecked] = useState(false);
+  const [sealingReady, setSealingReady] = useState(false);
+  const [sealStatus, setSealStatus] = useState<
+    "idle" | "encrypting" | "failed" | "too_large"
+  >("idle");
+  const sealedFilesRef = useRef(new Map<string, File[]>());
+
+  useEffect(() => {
+    if (!hasSealed) return;
+    const capable =
+      Boolean(sealing && sealing.recipients.length > 0) &&
+      globalThis.isSecureContext !== false &&
+      typeof globalThis.crypto?.subtle?.encrypt === "function";
+    setSealingReady(capable);
+    setSealingChecked(true);
+  }, [hasSealed, sealing]);
 
   const record = (fieldId: string, value: unknown) => {
     setAnswers((current) => ({ ...current, [fieldId]: value }));
@@ -66,6 +104,9 @@ export function FormRenderer({
       errorSummaryRef.current?.focus();
     }
     if (state.status === "draft_loaded") {
+      // Loading a draft re-creates the controls (empty file inputs): forget
+      // any sealed files picked before, so nothing unseen is sealed.
+      sealedFilesRef.current = new Map();
       setAnswers(state.draftAnswers ?? {});
       setDraftCode(state.resumeCode ?? "");
       setDraftGeneration((value) => value + 1);
@@ -82,6 +123,57 @@ export function FormRenderer({
       draftNoticeRef.current?.focus();
     }
   }, [state]);
+
+  const submitWithSealing = async (formData: FormData) => {
+    // Never send sealed answers in clear, whatever the controls contain.
+    for (const field of sealedFields) {
+      formData.delete(field.id);
+      for (const part of ADDRESS_PARTS) formData.delete(`${field.id}.${part}`);
+    }
+    formData.delete("__sealed");
+    const intent = formData.get("__intent");
+    if (intent !== "save_draft" && hasSealed && sealingReady && sealing) {
+      const visible = visibleFieldIdsForDefinition(definition, answers);
+      const files: File[] = [];
+      for (const field of sealedFields) {
+        if (field.type === "file" && visible.has(field.id)) {
+          files.push(...(sealedFilesRef.current.get(field.id) ?? []));
+        }
+      }
+      if (files.reduce((total, file) => total + file.size, 0) > SEALED_FILES_MAX_BYTES) {
+        setSealStatus("too_large");
+        return;
+      }
+      setSealStatus("encrypting");
+      try {
+        const fileInputs: SealedFileInput[] = [];
+        for (const field of sealedFields) {
+          if (field.type !== "file" || !visible.has(field.id)) continue;
+          for (const file of sealedFilesRef.current.get(field.id) ?? []) {
+            fileInputs.push({
+              fieldId: field.id,
+              name: file.name,
+              type: file.type,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+            });
+          }
+        }
+        const content = buildSealedContent(sealedFields, visible, answers, fileInputs);
+        if (content) {
+          const { seal } = await import("@/modules/sealed/sealed-crypto");
+          const envelope = await seal(content, sealing.recipients);
+          formData.set("__sealed", JSON.stringify(envelope));
+        }
+        setSealStatus("idle");
+      } catch {
+        // Nothing is sent when encryption fails.
+        setSealStatus("failed");
+        return;
+      }
+    }
+    startTransition(() => formAction(formData));
+  };
+  const busy = pending || sealStatus === "encrypting";
 
   if (state.status === "submitted") {
     return (
@@ -168,6 +260,7 @@ export function FormRenderer({
               <code data-testid="resume-code">{state.resumeCode}</code>
             </p>
             <p>{ui.draftNotIncluded}</p>
+            {hasSealed ? <p>{ui.sealedDraftNotice}</p> : null}
           </>
         ) : null}
         {state.status === "draft_loaded" ? <p>{ui.resumeLoaded}</p> : null}
@@ -183,12 +276,47 @@ export function FormRenderer({
       action={formAction}
       encType="multipart/form-data"
       data-testid="report-form"
+      onSubmit={
+        hasSealed
+          ? (event) => {
+              // With sealed fields the post is made here, after encryption;
+              // preventing the default also stops React's own form action.
+              event.preventDefault();
+              const submitter = (event.nativeEvent as SubmitEvent).submitter;
+              void submitWithSealing(formDataWithSubmitter(event.currentTarget, submitter));
+            }
+          : undefined
+      }
     >
       <input type="hidden" name="__locale" value={locale ?? ""} />
       <input type="hidden" name="__draft" value={draftCode} />
       {definition.intro ? <p>{definition.intro}</p> : null}
       <p className="hint">{ui.costNotice}</p>
       <p className="hint">{ui.requiredHint}</p>
+      {hasSealed ? (
+        <div id="sealed-notice" className="sealed-notice" data-testid="sealed-notice">
+          <p>{ui.sealedNotice}</p>
+          <noscript>
+            <p>{ui.sealedNeedsScript}</p>
+          </noscript>
+          {!sealing || (sealingChecked && !sealingReady) ? (
+            <p role="note">{ui.sealedUnavailable}</p>
+          ) : null}
+          {resumable ? <p>{ui.sealedDraftNotice}</p> : null}
+        </div>
+      ) : null}
+      {sealStatus === "failed" || sealStatus === "too_large" ? (
+        <div className="error-summary" role="alert">
+          <p>
+            {sealStatus === "failed"
+              ? ui.sealedFailed
+              : ui.sealedFilesTooLarge.replace(
+                  "{maxMegabytes}",
+                  String(SEALED_FILES_MAX_BYTES / 1_000_000),
+                )}
+          </p>
+        </div>
+      ) : null}
 
       {state.status === "validation_error" && state.errors.length ? (
         <div
@@ -226,6 +354,10 @@ export function FormRenderer({
                 value={answers[field.id]}
                 error={errorsByField.get(field.id)}
                 onValueChange={(value) => record(field.id, value)}
+                sealedEnabled={sealingReady}
+                onSealedFiles={(files) => {
+                  sealedFilesRef.current.set(field.id, files);
+                }}
               />
             ) : null,
           )}
@@ -235,10 +367,14 @@ export function FormRenderer({
       <button
         type="submit"
         data-testid="submit-report"
-        disabled={pending}
-        aria-disabled={pending}
+        disabled={busy}
+        aria-disabled={busy}
       >
-        {pending ? ui.submitting : definition.submitLabel}
+        {sealStatus === "encrypting"
+          ? ui.sealedEncrypting
+          : pending
+            ? ui.submitting
+            : definition.submitLabel}
       </button>
       {resumable ? (
         <button
@@ -247,18 +383,38 @@ export function FormRenderer({
           value="save_draft"
           formNoValidate
           className="secondary"
-          disabled={pending}
-          aria-disabled={pending}
+          disabled={busy}
+          aria-disabled={busy}
         >
           {pending ? ui.savingDraft : ui.saveDraft}
         </button>
       ) : null}
       <span className="sr-only" aria-live="polite">
-        {pending ? ui.submissionInProgress : ""}
+        {sealStatus === "encrypting"
+          ? ui.sealedEncrypting
+          : pending
+            ? ui.submissionInProgress
+            : ""}
       </span>
     </form>
     </>
   );
+}
+
+function formDataWithSubmitter(form: HTMLFormElement, submitter: HTMLElement | null) {
+  try {
+    return new FormData(form, submitter);
+  } catch {
+    const data = new FormData(form);
+    if (
+      submitter instanceof HTMLButtonElement &&
+      submitter.name &&
+      !data.has(submitter.name)
+    ) {
+      data.append(submitter.name, submitter.value);
+    }
+    return data;
+  }
 }
 
 function RequiredIndicator({
@@ -279,12 +435,18 @@ function RequiredIndicator({
   );
 }
 
+function SealedMarker({ field, text }: { field: FormField; text: string }) {
+  if (!field.sealed) return null;
+  return <span className="sealed-badge"> [{text}]</span>;
+}
+
 function descriptionIds(
   field: FormField,
   error?: string,
 ) {
   return [
     field.helpText ? `help-${field.id}` : null,
+    field.sealed ? "sealed-notice" : null,
     error ? `error-${field.id}` : null,
   ]
     .filter(Boolean)
@@ -320,16 +482,26 @@ function FormFieldControl({
   error,
   onValueChange,
   ui,
+  sealedEnabled = false,
+  onSealedFiles,
 }: {
   ui: FormUiStrings;
   field: FormField;
   value?: unknown;
   error?: string;
   onValueChange: (value: unknown) => void;
+  sealedEnabled?: boolean;
+  onSealedFiles?: (files: File[]) => void;
 }) {
   const required = field.required;
   const controlId = `field-${field.id}`;
   const describedBy = descriptionIds(field, error);
+  // A sealed control is never named (never part of a form post) and stays
+  // disabled until the browser can encrypt.
+  const sealed = field.sealed === true;
+  const name = sealed ? undefined : field.id;
+  const disabled = sealed && !sealedEnabled ? true : undefined;
+  const marker = <SealedMarker field={field} text={ui.sealedBadge} />;
 
   switch (field.type) {
     case "long_text":
@@ -338,10 +510,12 @@ function FormFieldControl({
           <label htmlFor={controlId}>
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </label>
           <textarea
             id={controlId}
-            name={field.id}
+            name={name}
+            disabled={disabled}
             placeholder={field.placeholder}
             required={required}
             minLength={field.validation?.minLength}
@@ -372,10 +546,12 @@ function FormFieldControl({
           <label htmlFor={controlId}>
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </label>
           <input
             id={controlId}
-            name={field.id}
+            name={name}
+            disabled={disabled}
             type={type}
             placeholder={field.placeholder}
             required={required}
@@ -416,7 +592,8 @@ function FormFieldControl({
           <label htmlFor={controlId}>
             <input
               id={controlId}
-              name={field.id}
+              name={name}
+              disabled={disabled}
               type="checkbox"
               value="true"
               aria-invalid={error ? true : undefined}
@@ -426,6 +603,7 @@ function FormFieldControl({
             />
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </label>
           <FieldMessages field={field} error={error} />
         </div>
@@ -437,7 +615,8 @@ function FormFieldControl({
           <label htmlFor={controlId}>
             <input
               id={controlId}
-              name={field.id}
+              name={name}
+              disabled={disabled}
               type="checkbox"
               value="true"
               required={required}
@@ -448,6 +627,7 @@ function FormFieldControl({
             />
             {field.attestationText ?? field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </label>
           <FieldMessages field={field} error={error} />
         </div>
@@ -459,10 +639,12 @@ function FormFieldControl({
           <label htmlFor={controlId}>
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </label>
           <select
             id={controlId}
-            name={field.id}
+            name={name}
+            disabled={disabled}
             required={required}
             value={typeof value === "string" ? value : ""}
             aria-invalid={error ? true : undefined}
@@ -493,11 +675,13 @@ function FormFieldControl({
           <legend>
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </legend>
           {(field.options ?? []).map((option) => (
             <label key={option.value}>
               <input
-                name={field.id}
+                name={name}
+              disabled={disabled}
                 type="checkbox"
                 value={option.value}
                 checked={
@@ -505,6 +689,20 @@ function FormFieldControl({
                   value.includes(option.value)
                 }
                 onChange={(event) => {
+                  if (sealed) {
+                    const current = Array.isArray(value)
+                      ? value.filter((item): item is string => typeof item === "string")
+                      : [];
+                    const checked = event.currentTarget.checked;
+                    onValueChange(
+                      (field.options ?? [])
+                        .map((item) => item.value)
+                        .filter((item) =>
+                          item === option.value ? checked : current.includes(item),
+                        ),
+                    );
+                    return;
+                  }
                   const form = event.currentTarget.form;
                   if (!form) return;
                   const values = new FormData(form)
@@ -529,11 +727,14 @@ function FormFieldControl({
           value={value}
           error={error}
           onValueChange={onValueChange}
+          sealed={sealed}
+          disabled={disabled}
         />
       );
 
     case "file": {
-      const publicUploadEnabled = Boolean(field.publicUpload);
+      // A sealed file is read and encrypted in the browser instead of uploaded.
+      const publicUploadEnabled = sealed ? sealedEnabled : Boolean(field.publicUpload);
       return (
         <fieldset
           id={controlId}
@@ -544,27 +745,32 @@ function FormFieldControl({
           <legend id={`legend-${field.id}`}>
             {field.label}
             <RequiredIndicator required={required} text={ui.required} />
+            {marker}
           </legend>
           <input
-            name={field.id}
+            name={name}
             type="file"
             aria-labelledby={`legend-${field.id}`}
             disabled={!publicUploadEnabled}
             required={required && publicUploadEnabled}
             multiple={(field.maxFiles ?? 1) > 1}
             accept={field.acceptedMimeTypes?.join(",")}
-            onChange={(event) =>
-              onValueChange(
-                Array.from(event.currentTarget.files ?? []).map(
-                  (file) => file.name,
-                ),
-              )
-            }
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              if (sealed) {
+                onSealedFiles?.(files.slice(0, field.maxFiles ?? 1));
+              }
+              onValueChange(files.map((file) => file.name));
+            }}
           />
           <small>
-            {publicUploadEnabled
-              ? ui.uploadQuarantineNotice
-              : ui.uploadDisabled}
+            {sealed
+              ? publicUploadEnabled
+                ? ui.sealedFileNotice
+                : ui.sealedUnavailable
+              : publicUploadEnabled
+                ? ui.uploadQuarantineNotice
+                : ui.uploadDisabled}
           </small>
           <FieldMessages field={field} error={error} />
         </fieldset>
@@ -595,6 +801,8 @@ function AddressFieldControl({
   error,
   onValueChange,
   ui,
+  sealed = false,
+  disabled,
 }: {
   ui: FormUiStrings;
   field: FormField;
@@ -602,6 +810,8 @@ function AddressFieldControl({
   value?: unknown;
   error?: string;
   onValueChange: (value: unknown) => void;
+  sealed?: boolean;
+  disabled?: boolean;
 }) {
   const [address, setAddress] = useState<Record<string, string>>(
     value && typeof value === "object" && !Array.isArray(value)
@@ -627,6 +837,7 @@ function AddressFieldControl({
       <legend>
         {field.label}
         <RequiredIndicator required={required} text={ui.required} />
+        <SealedMarker field={field} text={ui.sealedBadge} />
       </legend>
       {(["line1", "line2", "city", "region", "postalCode", "country"] as const).map(
         (part) => {
@@ -647,7 +858,8 @@ function AddressFieldControl({
               </label>
               <input
                 id={inputId}
-                name={`${field.id}.${part}`}
+                name={sealed ? undefined : `${field.id}.${part}`}
+                disabled={disabled}
                 required={
                   required &&
                   ["line1", "city", "region", "postalCode", "country"].includes(

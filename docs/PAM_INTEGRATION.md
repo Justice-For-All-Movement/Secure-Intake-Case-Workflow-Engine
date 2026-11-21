@@ -60,6 +60,7 @@ npm run app:manifest -- --file examples/reporting-manifest.example.json \
 | `APP_BASE_URL` | yes | Public origin of the app, e.g. `http://127.0.0.1:3100`. |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_ORGANIZATION_NAME`, `BOOTSTRAP_ORGANIZATION_SLUG` | first start | Creates the first organization and administrator (idempotent). |
 | `PROTECTED_DATA_ENCRYPTION_KEY` | when a form has protected fields | 64 hex chars (AES-256-GCM). Keep stable. |
+| `SEALING_RECIPIENTS` | when a form has sealed fields | JSON array of the research team's **public** sealing keys: `[{"keyId":"<64 hex>","label":"Laptop","publicJwk":{"kty":"EC","crv":"P-256","x":"...","y":"..."}}]`. `keyId` must be the SHA-256 hex of the canonical `{crv,kty,x,y}` (the fingerprint the research application shows). A private key (`d`) is refused. Absent or invalid = sealing unavailable: forms with sealed fields cannot be published and their sealed fields are disabled. Not a secret. |
 | `WEBHOOK_ENCRYPTION_KEY` | to create or deliver webhooks | 64 hex chars; encrypts signing secrets at rest. |
 | `PLATFORM_API_TOKEN_SHA256` | to use `/api/v1/platform/*` | SHA-256 hex of a random token of 32+ chars. Unset = platform API answers 404. |
 | `WEBHOOK_ALLOWED_PRIVATE_ORIGINS` | co-located receiver | Comma separated exact origins that may be private/HTTP, e.g. `http://127.0.0.1:8090`. All other webhook URLs must be public HTTPS on port 443. |
@@ -128,13 +129,16 @@ credentials and register webhooks. It cannot read any tenant data.
   `submission_not_submitted` 409, `content_unavailable` 409,
   `participant_messaging_unavailable` 409, `assignment_failed` 409,
   `validation_failed` 422, `transition_guard_failed` 422, `invalid_request` 422,
-  `protected_data_unavailable` 503, `operation_failed` 400 (unclassified).
+  `protected_data_unavailable` 503, `sealing_unavailable` 409,
+  `operation_failed` 400 (unclassified).
 - `validation_failed` details are `[{"fieldId","code","params"?,"message"}]`.
   `message` is English; `code` is language neutral (`required`, `text`,
   `date`, `email`, `number`, `min`, `max`, `boolean`, `attestation`, `option`,
   `options`, `address`, `address_incomplete`, `attachments`, `max_files`,
   `min_length`, `max_length`, `pattern`) and `params` carries the numbers
-  (`min`, `max`, `minLength`, `maxLength`, `maxFiles`). The public form shows
+  (`min`, `max`, `minLength`, `maxLength`, `maxFiles`); sealed fields add
+  `sealed` (a sealed answer was sent in clear: refused, never stored),
+  `sealed_unavailable` and `sealed_invalid`. The public form shows
   each code in the participant's language from the form's
   `translations.<locale>.ui.validation*` strings (for example
   `"validationMinLength": "Escriba al menos {minLength} caracteres."`).
@@ -249,6 +253,14 @@ Form definition fields that matter to an integrator:
   interface strings; keys are listed in `src/modules/forms/form-ui-strings.ts`.
 - A field with `protection` is removed from the ordinary answers and stored in
   a separately encrypted compartment.
+- A field with `"sealed": true` (any type, including `file`) is encrypted in
+  the participant's browser (see 4.4a); the server never receives it in clear.
+  A sealed field cannot drive visibility conditions, routing rules or the
+  participant-messaging condition, cannot also use `protection` or
+  `publicUpload`, and a form with sealed fields cannot be published unless
+  `SEALING_RECIPIENTS` is configured. Optional form-level
+  `"sealing":{"sourceRiskLevel":"low|medium|high|severe"}` is passed to the
+  reader with each envelope.
 - Identity is never required by the engine: whether a form asks for a name is
   entirely the form's choice. The public form needs no account and no payment.
 
@@ -282,12 +294,13 @@ endpoint (see section 10).
 {"data":{"id":"0b6e5de7-...","status":"submitted","channel":"api","locale":"es",
  "confirmationCode":"SCW-2A0E33F54782E872","submittedAt":"2026-11-10T05:44:01.926Z",
  "form":{"id":"a8e2ad34-...","slug":"report","name":"Make a report","versionId":"6524785d-...","versionNumber":1,
-   "fields":[{"id":"participation","type":"select","label":"How do you want to take part?","protected":false},
-             {"id":"preferred_name","type":"short_text","label":"Name or pseudonym","protected":true}]},
+   "fields":[{"id":"participation","type":"select","label":"How do you want to take part?","protected":false,"sealed":false},
+             {"id":"preferred_name","type":"short_text","label":"Name or pseudonym","protected":true,"sealed":false}]},
  "originalAccount":{"answers":{"narrative":"Something happened at the depot.","participation":"pseudonymous"},
    "sha256":"a2219b89...","recordedSha256":"a2219b89...","digestMatchesRecord":true,
    "canonicalization":"json-sorted-keys-utf8","immutable":true},
  "protectedCompartments":[{"compartment":"identity","fieldIds":["preferred_name"]}],
+ "sealed":null,
  "attachmentCount":0,
  "case":null,
  "participantPortal":{"enabled":true,"credentialActive":true}}}
@@ -312,6 +325,57 @@ credential. Without the explicit scope the answer is `403`.
 ```json
 {"data":{"submissionId":"0b6e5de7-...","compartments":[{"compartment":"identity","fieldIds":["preferred_name"],"values":{"preferred_name":"River"}}]}}
 ```
+
+### 4.4a Sealed answers
+
+Fields marked `"sealed": true` are encrypted **in the participant's browser**
+before anything is sent, with the research application's sealing scheme
+(`src/modules/sealed/sealed-crypto.js`, a byte-identical copy of the research
+application's `web/js/sealed-crypto.js`: ECDH P-256 + HKDF-SHA-256 +
+AES-256-GCM, salted SHA-256 commitment). All sealed answers and sealed files
+of a submission (files as base64) form one record, sealed for every key in
+`SEALING_RECIPIENTS`. The server stores only the envelope; it holds no key that
+opens it.
+
+- Sealed controls carry no `name` and are disabled until the browser has
+  checked it can encrypt, so a form post never contains them; with
+  JavaScript off they stay disabled with an explanation.
+- Drafts never contain sealed answers.
+- The server checks the envelope's exact shape (only envelope fields, base64,
+  sizes, recipients must be configured keys) and, for a visible required
+  sealed field, only that an envelope exists; the browser checks the content.
+- Sealed file total: 20 MB per submission (browser); envelope: 41 MB (form) or
+  the 2 MB API request limit for `POST /submissions` with `sealedEnvelope`.
+- Content of the sealed record: `{"schema":"intake-sealed-answers/v1",
+  "text":"<label>\n<answer>\n\n...","fields":[{"id","label","type"}],
+  "answers":{"<fieldId>":<value>},"files":[{"fieldId","name","type","base64"}]}`.
+
+`GET {B}/submissions/{submissionId}` carries, when the submission is sealed:
+
+```json
+"sealed":{"fieldIds":["story","proof"],"commitment":"9f2c...","recipientKeyIds":["4b1e..."],
+  "sizeBytes":5210,"receivedAt":"2026-11-20T10:00:00.000Z","sourceRiskLevel":"high",
+  "envelopePath":"/api/v1/submissions/0b6e5de7-.../sealed"}
+```
+
+`GET {B}/submissions/{submissionId}/sealed` [`submission:view`] — the envelope
+(ciphertext only). Each read writes a `sealed_envelope.service_read` audit
+event. `404` when the submission has no sealed answers.
+
+```json
+{"data":{"submissionId":"0b6e5de7-...","receivedAt":"2026-11-20T10:00:00.000Z",
+ "commitment":"9f2c...","recipientKeyIds":["4b1e..."],"sizeBytes":5210,"sourceRiskLevel":"high",
+ "envelope":{"format":"pam-sealed","v":1,"alg":"ECDH-P256+HKDF-SHA256+A256GCM","iv":"...","ciphertext":"...",
+   "recipients":[{"keyId":"4b1e...","epk":{"crv":"P-256","kty":"EC","x":"...","y":"..."},"salt":"...","iv":"...","wrappedKey":"..."}],
+   "commitment":"9f2c..."}}}
+```
+
+`POST {B}/submissions` accepts `"sealedEnvelope": {...}` (an envelope sealed
+by the caller); a sealed field in `answers` is refused (`validation_failed`,
+code `sealed`). The envelope is stored in the same transaction as the
+submission, so it exists when `submission.created` is delivered. Staff see
+"Sealed answers — readable only in PAM (Sealed sources) or with the offline
+sealed reader" and can download the envelope file; never any plaintext.
 
 ### 4.5 Attachments
 
@@ -522,7 +586,7 @@ The feed and the webhooks expose those events with one envelope:
 | `note.created` | Internal note added (body is not in the event). | case_note → case |
 | `participant_portal.credential_issued`, `participant_portal.authenticated`, `participant_portal.secret_rotated` | Participant access lifecycle. | credential → submission |
 | `document.public_upload_quarantined`, `document.downloaded`, `document.attached_to_case` | Upload custody. | document_version |
-| `protected_data.service_read`, `identity.staff_linked`, `identity.participant_linked`, `application.manifest_applied`, `api.client_created`, ... | Administrative. | — |
+| `protected_data.service_read`, `submission.sealed_envelope_stored` (same transaction as `submission.created`; metadata: commitment, recipient count, size), `sealed_envelope.service_read`, `sealed_envelope.downloaded`, `identity.staff_linked`, `identity.participant_linked`, `application.manifest_applied`, `api.client_created`, ... | Administrative. | — |
 
 Events never contain answers, message bodies, note bodies, filenames,
 protected values or secrets. Fetch content with the read endpoints.
@@ -749,7 +813,11 @@ Deliberate boundaries of the engine (not planned work):
 - No binary upload through the service API (`POST /submissions` is answers
   only); files enter through the public form or the staff UI.
 - Participant messages carry no attachments.
-- Protected compartments cover structured fields, not files.
+- Protected compartments cover structured fields, not files (sealed fields
+  cover both, see 4.4a).
+- Script-less (JavaScript off) posts of the public form are refused by the
+  framework because `Referrer-Policy: no-referrer` makes browsers send
+  `Origin: null`; sealed fields need JavaScript in any case.
 - Filing/deciding reviews and creating teams/queues ad hoc have no service
   endpoint (use the manifest or the staff UI).
 - The email transport sends plain text without attachments.

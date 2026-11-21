@@ -660,6 +660,40 @@ export const submissionProtectedCompartments = pgTable(
   ],
 );
 
+/**
+ * Sealed answers of a submission: one envelope encrypted in the participant's
+ * browser to the configured sealing recipients. Ciphertext only; this
+ * application holds no key that opens it. Immutable once stored.
+ */
+export const submissionSealedEnvelopes = pgTable(
+  "submission_sealed_envelopes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => intakeSubmissions.id, { onDelete: "cascade" }),
+    envelopeJson: text("envelope_json").notNull(),
+    commitment: text("commitment").notNull(),
+    recipientKeyIds: jsonb("recipient_key_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("submission_sealed_envelopes_org_idx").on(table.organizationId),
+    uniqueIndex("submission_sealed_envelopes_submission_idx").on(
+      table.submissionId,
+    ),
+  ],
+);
+
 export const protectedRevealRequests = pgTable(
   "protected_reveal_requests",
   {

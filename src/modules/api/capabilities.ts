@@ -1,5 +1,6 @@
 import { engineBuildInfo } from "@/lib/build-info";
 import { corePermissions } from "@/modules/auth/permissions";
+import { sealingConfig } from "@/modules/sealed/recipients";
 import type { ApiAuthorizationContext } from "./auth";
 
 // Inventory of the bearer API only. A delegable permission is not evidence
@@ -32,6 +33,7 @@ export const apiEndpoints = [
   { id: "submissions.create", method: "POST", path: "/api/v1/submissions", requiredScopes: ["submission:create"], pagination: "none" },
   { id: "submissions.get", method: "GET", path: "/api/v1/submissions/{submissionId}", requiredScopes: ["submission:view"], pagination: "none" },
   { id: "submissions.protected", method: "GET", path: "/api/v1/submissions/{submissionId}/protected", requiredScopes: ["submission:view", "submission:view_protected"], pagination: "none" },
+  { id: "submissions.sealed", method: "GET", path: "/api/v1/submissions/{submissionId}/sealed", requiredScopes: ["submission:view"], pagination: "none" },
   { id: "submissions.attachments", method: "GET", path: "/api/v1/submissions/{submissionId}/attachments", requiredScopes: ["submission:view", "document:view"], pagination: "none" },
   { id: "submissions.identity", method: "POST", path: "/api/v1/submissions/{submissionId}/identity", requiredScopes: ["identity:manage"], pagination: "none" },
   { id: "documents.content", method: "GET", path: "/api/v1/documents/{versionId}/content", requiredScopes: ["document:view"], pagination: "none" },
@@ -74,6 +76,7 @@ export function apiCapabilities(context: ApiAuthorizationContext) {
         sorts: ["updated_desc", "created_desc", "priority_desc"],
       },
       submissionQuery: ["status", "formId", "limit", "offset"],
+      sealedSubmissions: { available: sealingConfig().status === "ready", envelopeFormat: "pam-sealed/1", serverCanDecrypt: false, apiCreateMaxRequestBytes: 2_000_000 },
       auditQuery: ["action", "resourceType", "resourceId", "limit", "offset"],
       deadlineOperations: ["extend", "create"],
       referralOperations: ["send", "acknowledge", "response", "complete", "cancel"],

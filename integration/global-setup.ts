@@ -70,6 +70,14 @@ export default async function setup() {
   const emptySignatures = path.join(work, "signatures-empty");
   await mkdir(emptySignatures);
 
+  // Sealing keys of a fictional research team: the server gets the public
+  // keys only; the tests keep the private keys to open what was sealed.
+  const { generateKeyPair } = await import("../src/modules/sealed/sealed-crypto.js");
+  const sealingKeys = [await generateKeyPair(), await generateKeyPair()];
+  const sealingRecipients = JSON.stringify(
+    sealingKeys.map((pair, index) => ({ keyId: pair.id, label: `Researcher ${index + 1}`, publicJwk: pair.publicJwk })),
+  );
+
   const port = await freePort();
   const webhookPort = await freePort();
   const platformToken = randomBytes(36).toString("base64url");
@@ -92,6 +100,7 @@ export default async function setup() {
     AUTH_LOGIN_FAILURE_LIMIT: "50",
     API_DEFAULT_RATE_LIMIT_PER_MINUTE: "5000",
     BACKGROUND_JOB_POLL_MS: "200",
+    SEALING_RECIPIENTS: sealingRecipients,
   };
 
   if (
@@ -136,6 +145,7 @@ export default async function setup() {
     IT_WEBHOOK_PORT: String(webhookPort),
     IT_WORK_DIR: work,
     IT_EMPTY_SIGNATURES: emptySignatures,
+    IT_SEALING_KEYS: JSON.stringify(sealingKeys),
     IT_SERVER_ENV: JSON.stringify(
       Object.fromEntries(
         [
@@ -149,6 +159,7 @@ export default async function setup() {
           "MALWARE_SCANNER_DRIVER",
           "CLAMSCAN_DATABASE_DIR",
           "BACKGROUND_JOB_POLL_MS",
+          "SEALING_RECIPIENTS",
         ].map((key) => [key, env[key]]),
       ),
     ),

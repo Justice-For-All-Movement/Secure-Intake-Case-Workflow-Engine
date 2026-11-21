@@ -22,6 +22,8 @@ import {
   FormNotAvailableError,
   SubmissionValidationError,
 } from "@/modules/forms/service";
+import { SealingUnavailableError } from "@/modules/sealed/recipients";
+import { SealedRoutingError } from "@/modules/sealed/policy";
 import { InvalidEventCursorError } from "./events";
 
 export class ApiProblem extends Error {
@@ -100,6 +102,12 @@ function problemFromError(error: unknown): ApiProblem {
       "content_unavailable",
       "Document content is quarantined or blocked.",
     );
+  }
+  if (error instanceof SealingUnavailableError) {
+    return new ApiProblem(409, "sealing_unavailable", error.message);
+  }
+  if (error instanceof SealedRoutingError) {
+    return new ApiProblem(422, "invalid_request", error.message);
   }
   if (error instanceof InvalidEventCursorError) {
     return new ApiProblem(400, "invalid_cursor", error.message);

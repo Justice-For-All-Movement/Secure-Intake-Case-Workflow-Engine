@@ -8,6 +8,9 @@ export function answersFromFormData(
   const answers: Record<string, unknown> = {};
 
   for (const field of fieldsInDefinition(definition)) {
+    // Sealed answers are never read from a form post: the browser sends them
+    // only inside the sealed envelope (`__sealed`).
+    if (field.sealed) continue;
     const parsed = parseFieldFromFormData(field, formData);
     if (parsed !== undefined) {
       answers[field.id] = parsed;

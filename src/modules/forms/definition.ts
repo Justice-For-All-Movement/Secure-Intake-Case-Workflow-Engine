@@ -72,8 +72,34 @@ export const formFieldSchema = z
     maxFiles: z.number().int().positive().max(50).optional(),
     publicUpload: publicUploadSchema.optional(),
     protection: fieldProtectionSchema.optional(),
+    /**
+     * Sealed: the answer (or file) is encrypted in the participant's browser
+     * to the deployment's sealing recipients (SEALING_RECIPIENTS) and only the
+     * ciphertext reaches this server. The server can never read it, so a
+     * sealed field cannot drive visibility conditions, routing or
+     * participant-messaging conditions, and is never kept in drafts.
+     */
+    sealed: z.boolean().optional(),
   })
   .superRefine((field, ctx) => {
+    if (field.sealed && field.protection) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "A sealed field cannot also use a protected compartment: it is encrypted in the participant's browser instead.",
+        path: ["protection"],
+      });
+    }
+
+    if (field.sealed && field.publicUpload) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "A sealed file field is encrypted in the participant's browser and is never uploaded in clear; remove publicUpload.",
+        path: ["publicUpload"],
+      });
+    }
+
     if (
       (field.type === "select" || field.type === "multiselect") &&
       (!field.options || field.options.length === 0)
@@ -218,6 +244,12 @@ export const formDefinitionSchema = z
     submitLabel: z.string().min(1).max(100).default("Submit"),
     confirmationMessage: z.string().max(5000).optional(),
     participantPortal: participantPortalSchema.optional(),
+    /** Metadata for sealed submissions, passed to the downstream reader. */
+    sealing: z
+      .object({
+        sourceRiskLevel: z.enum(["low", "medium", "high", "severe"]).optional(),
+      })
+      .optional(),
     sections: z.array(formSectionSchema).min(1).max(100),
   })
   .superRefine((definition, ctx) => {
@@ -279,8 +311,22 @@ export const formDefinitionSchema = z
       ] as const),
     );
 
+    const sealedFieldIds = new Set(
+      fieldsInDefinition(definition)
+        .filter((field) => field.sealed)
+        .map((field) => field.id),
+    );
+
     if (definition.participantPortal?.messagingCondition) {
       const condition = definition.participantPortal.messagingCondition;
+      if (sealedFieldIds.has(condition.fieldId)) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "Participant messaging condition cannot reference a sealed field: the server cannot read it.",
+          path: ["participantPortal", "messagingCondition"],
+        });
+      }
       if (!fieldIds.has(condition.fieldId)) {
         ctx.addIssue({
           code: "custom",
@@ -310,6 +356,15 @@ export const formDefinitionSchema = z
     definition.sections.forEach((section, sectionIndex) => {
       section.fields.forEach((field, fieldIndex) => {
         if (!field.condition) return;
+
+        if (sealedFieldIds.has(field.condition.fieldId)) {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              "A sealed field cannot control visibility: the server cannot read it.",
+            path: ["sections", sectionIndex, "fields", fieldIndex, "condition"],
+          });
+        }
 
         if (!fieldIds.has(field.condition.fieldId)) {
           ctx.addIssue({
@@ -363,4 +418,15 @@ export function fieldsInDefinition(
   definition: FormDefinition,
 ): FormField[] {
   return definition.sections.flatMap((section) => section.fields);
+}
+
+/** Fields whose answers are encrypted in the participant's browser. */
+export function sealedFieldsInDefinition(
+  definition: FormDefinition,
+): FormField[] {
+  return fieldsInDefinition(definition).filter((field) => field.sealed === true);
+}
+
+export function definitionUsesSealing(definition: FormDefinition): boolean {
+  return sealedFieldsInDefinition(definition).length > 0;
 }

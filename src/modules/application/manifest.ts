@@ -606,7 +606,24 @@ export const applicationManifestSchema = z
       }
     });
 
+    const sealedFieldIds = new Set(
+      manifest.forms.flatMap((form) =>
+        form.definition.sections.flatMap((section) =>
+          section.fields.filter((field) => field.sealed).map((field) => field.id),
+        ),
+      ),
+    );
+
     manifest.routingRules.forEach((rule, index) => {
+      rule.definition.conditions.forEach((condition, conditionIndex) => {
+        if (condition.field === "submission" && sealedFieldIds.has(condition.fieldId)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Routing rule cannot use sealed field ${condition.fieldId}: the server cannot read it.`,
+            path: ["routingRules", index, "definition", "conditions", conditionIndex],
+          });
+        }
+      });
       if (!queueKeys.has(rule.targetQueueSlug)) {
         ctx.addIssue({
           code: "custom",
